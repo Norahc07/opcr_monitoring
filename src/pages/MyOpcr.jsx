@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil, Printer } from 'lucide-react'
+import { GripVertical, Pencil, Plus, Printer, Trash2 } from 'lucide-react'
 import { Alert, Button, LoadingState, Toast, useToast } from '../components/ui'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
@@ -10,39 +10,51 @@ import {
   formatAverage,
   formatDateDisplay,
   getActivePeriod,
+  isTempEntryId,
   readApprovedCache,
   readClosingCache,
-  saveEntries,
+  saveOpcrRows,
   saveFormSigner,
   toDateValue,
   writeApprovedCache,
   writeClosingCache,
 } from '../lib/opcr'
-import { SECTION1, SECTION2, SECTION3, SECTION4 } from '../lib/coreFunctions'
 
 const HEAD_OF_OFFICE = 'HON. BAUTISTA ERWIN DWIGHT C. PASTRANA'
 const HEAD_OF_OFFICE_TITLE = 'Municipal Mayor'
 const ASSESSOR_NAME = 'CONCHITA MARTA B. MIRABUENO'
 const ASSESSOR_TITLE = 'MGDH1-Center Manager'
 
-function matchEntry(entries, spec) {
-  const exact = entries.find((row) => {
-    const name = String(row.opcr_items?.output || '')
-      .trim()
-      .toLowerCase()
-    return spec.keys.some((key) => name === key)
-  })
-  if (exact) return exact
-  return entries.find((row) => {
-    const name = String(row.opcr_items?.output || '')
-      .trim()
-      .toLowerCase()
-    return spec.keys.some((key) => name.includes(key))
-  })
+function sortSection(entries, section) {
+  return entries
+    .filter((entry) => Number(entry.section) === section)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
 }
 
-function matchSection(specs, entries) {
-  return specs.map((spec) => ({ spec, entry: matchEntry(entries, spec) }))
+function reorderEntries(entries, draggedId, toSection, beforeId) {
+  const moving = entries.find((entry) => entry.id === draggedId)
+  if (!moving) return entries
+
+  const others = entries.filter((entry) => entry.id !== draggedId)
+  const next = []
+
+  for (const section of [1, 2, 3, 4]) {
+    const list = others
+      .filter((entry) => Number(entry.section) === section)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    if (section === Number(toSection)) {
+      let insertAt = beforeId ? list.findIndex((entry) => entry.id === beforeId) : -1
+      if (insertAt < 0) insertAt = list.length
+      list.splice(insertAt, 0, { ...moving, section: Number(toSection) })
+    }
+
+    list.forEach((entry, index) => {
+      next.push({ ...entry, section, sort_order: (index + 1) * 10 })
+    })
+  }
+
+  return next
 }
 
 function OpcrColGroup() {
@@ -95,80 +107,174 @@ function OpcrFunctionsTable({ headClassName = '', children }) {
   )
 }
 
-function successLines(spec) {
-  return Array.isArray(spec.success) ? spec.success : [spec.success]
-}
-
-function OpcrItemRows({ rows, locked, editing, onUpdate }) {
-  return rows.flatMap(({ spec, entry }) => {
-    const lines = successLines(spec)
-    const span = lines.length
-
-    const accomplishmentCell = (
-      <td rowSpan={span}>
+function OpcrItemRows({
+  entries,
+  section,
+  locked,
+  editing,
+  gripId,
+  dragId,
+  dropId,
+  onUpdate,
+  onRemove,
+  onGrip,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}) {
+  const canDrag = editing && !locked
+  return entries.map((entry) => (
+    <tr
+      key={entry.id}
+      draggable={canDrag && gripId === entry.id}
+      className={
+        dragId === entry.id
+          ? 'opcr-row-dragging'
+          : dropId === entry.id
+            ? 'opcr-row-drop'
+            : undefined
+      }
+      onDragStart={(event) => {
+        if (!canDrag || gripId !== entry.id) {
+          event.preventDefault()
+          return
+        }
+        event.dataTransfer.setData('text/plain', String(entry.id))
+        event.dataTransfer.effectAllowed = 'move'
+        onDragStart(entry.id)
+      }}
+      onDragOver={(event) => {
+        if (!canDrag || !dragId || dragId === entry.id) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        onDragOver(entry.id)
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        const id = event.dataTransfer.getData('text/plain') || dragId
+        onDrop(id, section, entry.id)
+      }}
+      onDragEnd={onDragEnd}
+    >
+      <td className="align-top font-bold text-slate-900">
+        {canDrag ? (
+          <div className="space-y-2">
+            <div className="flex items-start gap-2">
+              <span
+                className="opcr-drag-handle print-hide mt-1"
+                title="Drag to move this row"
+                aria-label="Drag row"
+                onMouseDown={() => onGrip(entry.id)}
+              >
+                <GripVertical size={16} />
+              </span>
+              <textarea
+                value={entry.output || ''}
+                onChange={(event) => onUpdate(entry.id, 'output', event.target.value)}
+                className="field min-h-16 flex-1 font-bold"
+                placeholder="Output"
+              />
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 print-hide hover:text-rose-800"
+              onClick={() => onRemove(entry.id)}
+            >
+              <Trash2 size={12} />
+              Remove row
+            </button>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap">{entry.output || ''}</p>
+        )}
+      </td>
+      <td className="align-top leading-6 text-slate-700">
         {editing && !locked ? (
           <textarea
-            disabled={!entry}
-            value={entry?.actual_accomplishment || ''}
-            onChange={(event) => onUpdate(entry?.id, 'actual_accomplishment', event.target.value)}
+            value={entry.success_indicator || ''}
+            onChange={(event) => onUpdate(entry.id, 'success_indicator', event.target.value)}
+            className="field min-h-16"
+            placeholder="Success indicator (target + measures)"
+          />
+        ) : (
+          <p className="whitespace-pre-wrap">{entry.success_indicator || ''}</p>
+        )}
+      </td>
+      <td>
+        {editing && !locked ? (
+          <textarea
+            value={entry.actual_accomplishment || ''}
+            onChange={(event) => onUpdate(entry.id, 'actual_accomplishment', event.target.value)}
             className="field"
             placeholder="Enter actual accomplishment"
           />
         ) : (
-          <p className="min-h-16 whitespace-pre-wrap">{entry?.actual_accomplishment || ''}</p>
+          <p className="min-h-16 whitespace-pre-wrap">{entry.actual_accomplishment || ''}</p>
         )}
       </td>
-    )
-
-    const ratingCells = [
-      ['Q', entry?.rating_q],
-      ['E', entry?.rating_e],
-      ['T', entry?.rating_t],
-      ['A', entry?.rating_a],
-    ].map(([label, value]) => (
-      <td
-        key={label}
-        rowSpan={span}
-        className="text-center align-middle font-semibold text-slate-500"
-      >
-        {value ? formatAverage(value) : ''}
-      </td>
-    ))
-
-    const remarksCell = (
-      <td rowSpan={span}>
+      {['rating_q', 'rating_e', 'rating_t', 'rating_a'].map((field) => (
+        <td key={field} className="text-center align-middle font-semibold text-slate-500">
+          {entry[field] ? formatAverage(entry[field]) : ''}
+        </td>
+      ))}
+      <td>
         {editing && !locked ? (
           <textarea
-            disabled={!entry}
-            value={entry?.remarks || ''}
-            onChange={(event) => onUpdate(entry?.id, 'remarks', event.target.value)}
+            value={entry.remarks || ''}
+            onChange={(event) => onUpdate(entry.id, 'remarks', event.target.value)}
             className="field"
             placeholder="Remarks"
           />
         ) : (
-          <p className="min-h-16 whitespace-pre-wrap">{entry?.remarks || ''}</p>
+          <p className="min-h-16 whitespace-pre-wrap">{entry.remarks || ''}</p>
         )}
       </td>
-    )
+    </tr>
+  ))
+}
 
-    return lines.map((line, lineIndex) => (
-      <tr key={`${spec.output}-${lineIndex}`}>
-        {lineIndex === 0 && (
-          <td rowSpan={span} className="align-middle font-bold text-slate-900">
-            {spec.output}
-          </td>
-        )}
-        <td className="leading-6 text-slate-700">{line}</td>
-        {lineIndex === 0 && (
-          <>
-            {accomplishmentCell}
-            {ratingCells}
-            {remarksCell}
-          </>
-        )}
-      </tr>
-    ))
-  })
+function AddOpcrRow({
+  editing,
+  locked,
+  section,
+  dropId,
+  dragId,
+  onAdd,
+  onDragOver,
+  onDrop,
+}) {
+  if (!editing || locked) return null
+  return (
+    <tr
+      className={`opcr-add-row print-hide ${dropId === `section-${section}` ? 'opcr-row-drop' : ''}`}
+      onDragOver={(event) => {
+        if (!dragId) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        onDragOver(`section-${section}`)
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        const id = event.dataTransfer.getData('text/plain') || dragId
+        onDrop(id, section, null)
+      }}
+    >
+      <td colSpan={8} className="bg-slate-50">
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-teal-800 hover:text-teal-950"
+        >
+          <Plus size={16} />
+          Add row
+        </button>
+        <span className="ml-3 text-xs font-medium text-slate-500">
+          or drop a row here to move it to this section
+        </span>
+      </td>
+    </tr>
+  )
 }
 
 function ClosingDate({ editing, locked, value, onChange }) {
@@ -204,6 +310,10 @@ export default function MyOpcr() {
   const [finalRaterName, setFinalRaterName] = useState('')
   const [finalRatingDate, setFinalRatingDate] = useState('')
   const [editingIdentity, setEditingIdentity] = useState(false)
+  const [removedIds, setRemovedIds] = useState([])
+  const [gripId, setGripId] = useState(null)
+  const [dragId, setDragId] = useState(null)
+  const [dropId, setDropId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -212,10 +322,10 @@ export default function MyOpcr() {
   const year = Math.max(Number(period?.year) || 0, new Date().getFullYear())
   const average = useMemo(() => calcFinalAverage(entries), [entries])
 
-  const section1Entries = useMemo(() => matchSection(SECTION1, entries), [entries])
-  const section2Entries = useMemo(() => matchSection(SECTION2, entries), [entries])
-  const section3Entries = useMemo(() => matchSection(SECTION3, entries), [entries])
-  const section4Entries = useMemo(() => matchSection(SECTION4, entries), [entries])
+  const section1Entries = useMemo(() => sortSection(entries, 1), [entries])
+  const section2Entries = useMemo(() => sortSection(entries, 2), [entries])
+  const section3Entries = useMemo(() => sortSection(entries, 3), [entries])
+  const section4Entries = useMemo(() => sortSection(entries, 4), [entries])
 
   useEffect(() => {
     let active = true
@@ -280,6 +390,14 @@ export default function MyOpcr() {
     }
   }, [user?.id])
 
+  useEffect(() => {
+    function onUp() {
+      if (!dragId) setGripId(null)
+    }
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [dragId])
+
   async function changeApprovedDate(value) {
     const nextDate = toDateValue(value)
     setApprovedDate(nextDate)
@@ -302,18 +420,59 @@ export default function MyOpcr() {
     )
   }
 
+  function addRow(section) {
+    if (!form?.id || locked) return
+    const inSection = entries.filter((entry) => Number(entry.section) === section)
+    const nextOrder =
+      inSection.reduce((max, entry) => Math.max(max, Number(entry.sort_order) || 0), 0) + 10
+    setEditingIdentity(true)
+    setEntries((current) => [
+      ...current,
+      {
+        id: `tmp-${crypto.randomUUID()}`,
+        form_id: form.id,
+        item_id: null,
+        output: '',
+        success_indicator: '',
+        section,
+        sort_order: nextOrder,
+        actual_accomplishment: '',
+        remarks: '',
+      },
+    ])
+  }
+
+  function removeRow(id) {
+    if (!id || locked) return
+    setEntries((current) => current.filter((entry) => entry.id !== id))
+    if (!isTempEntryId(id)) {
+      setRemovedIds((current) => (current.includes(id) ? current : [...current, id]))
+    }
+  }
+
+  function clearDrag() {
+    setGripId(null)
+    setDragId(null)
+    setDropId(null)
+  }
+
+  function moveRow(draggedId, toSection, beforeId) {
+    if (!draggedId || locked) {
+      clearDrag()
+      return
+    }
+    setEntries((current) => reorderEntries(current, draggedId, toSection, beforeId))
+    clearDrag()
+  }
+
   async function persist() {
     if (!form) return
     setSaving(true)
     setError('')
     try {
-      const sectionIds = new Set(
-        [...section1Entries, ...section2Entries, ...section3Entries, ...section4Entries].map((row) => row.entry?.id).filter(Boolean),
-      )
-      await saveEntries(
-        supabase,
-        entries.filter((entry) => sectionIds.has(entry.id)),
-      )
+      const savedRows = await saveOpcrRows(supabase, form.id, entries, removedIds)
+      setEntries(savedRows)
+      setRemovedIds([])
       const savedDate = await saveFormSigner(supabase, form.id, {
         name: staffName.trim(),
         position: staffPosition.trim(),
@@ -392,6 +551,21 @@ export default function MyOpcr() {
     window.setTimeout(() => window.print(), 50)
   }
 
+  const rowDrag = {
+    locked,
+    editing: editingIdentity,
+    gripId,
+    dragId,
+    dropId,
+    onUpdate: updateEntry,
+    onRemove: removeRow,
+    onGrip: setGripId,
+    onDragStart: setDragId,
+    onDragOver: setDropId,
+    onDrop: moveRow,
+    onDragEnd: clearDrag,
+  }
+
   if (loading) return <LoadingState label="Loading your OPCR…" />
 
   return (
@@ -420,6 +594,11 @@ export default function MyOpcr() {
               </Button>
             ))}
         </div>
+        {editingIdentity && !locked && (
+          <p className="print-hide mb-3 pr-40 text-xs font-medium text-slate-500">
+            Drag the handle beside Output to move a row up or into another section, then Save.
+          </p>
+        )}
 
         <div className="opcr-sheet mt-0">
           <div className="opcr-print-page">
@@ -533,10 +712,19 @@ export default function MyOpcr() {
                     <td colSpan={8}>Core Function:</td>
                   </tr>
                   <OpcrItemRows
-                    rows={section1Entries}
-                    locked={locked}
+                    entries={section1Entries}
+                    section={1}
+                    {...rowDrag}
+                  />
+                  <AddOpcrRow
                     editing={editingIdentity}
-                    onUpdate={updateEntry}
+                    locked={locked}
+                    section={1}
+                    dragId={dragId}
+                    dropId={dropId}
+                    onAdd={() => addRow(1)}
+                    onDragOver={setDropId}
+                    onDrop={moveRow}
                   />
               </OpcrFunctionsTable>
             </div>
@@ -546,10 +734,19 @@ export default function MyOpcr() {
             <div className="opcr-print-fill">
               <OpcrFunctionsTable headClassName="opcr-repeat-head">
                   <OpcrItemRows
-                    rows={section2Entries}
-                    locked={locked}
+                    entries={section2Entries}
+                    section={2}
+                    {...rowDrag}
+                  />
+                  <AddOpcrRow
                     editing={editingIdentity}
-                    onUpdate={updateEntry}
+                    locked={locked}
+                    section={2}
+                    dragId={dragId}
+                    dropId={dropId}
+                    onAdd={() => addRow(2)}
+                    onDragOver={setDropId}
+                    onDrop={moveRow}
                   />
               </OpcrFunctionsTable>
             </div>
@@ -559,10 +756,19 @@ export default function MyOpcr() {
             <div className="opcr-print-fill">
               <OpcrFunctionsTable headClassName="opcr-repeat-head">
                   <OpcrItemRows
-                    rows={section3Entries}
-                    locked={locked}
+                    entries={section3Entries}
+                    section={3}
+                    {...rowDrag}
+                  />
+                  <AddOpcrRow
                     editing={editingIdentity}
-                    onUpdate={updateEntry}
+                    locked={locked}
+                    section={3}
+                    dragId={dragId}
+                    dropId={dropId}
+                    onAdd={() => addRow(3)}
+                    onDragOver={setDropId}
+                    onDrop={moveRow}
                   />
               </OpcrFunctionsTable>
             </div>
@@ -572,10 +778,19 @@ export default function MyOpcr() {
             <div className="opcr-print-fill">
               <OpcrFunctionsTable headClassName="opcr-repeat-head">
                   <OpcrItemRows
-                    rows={section4Entries}
-                    locked={locked}
+                    entries={section4Entries}
+                    section={4}
+                    {...rowDrag}
+                  />
+                  <AddOpcrRow
                     editing={editingIdentity}
-                    onUpdate={updateEntry}
+                    locked={locked}
+                    section={4}
+                    dragId={dragId}
+                    dropId={dropId}
+                    onAdd={() => addRow(4)}
+                    onDragOver={setDropId}
+                    onDrop={moveRow}
                   />
               </OpcrFunctionsTable>
             </div>
@@ -636,8 +851,31 @@ export default function MyOpcr() {
                 </tr>
                 <tr>
                   <td className="opcr-closing-sign">
-                    <p className="opcr-approved-name">{staffName}</p>
-                    {staffPosition ? <p className="opcr-approved-position">{staffPosition}</p> : null}
+                    {editingIdentity && !locked ? (
+                      <div className="space-y-1">
+                        <input
+                          className="opcr-approved-name"
+                          value={staffName}
+                          onChange={(event) => setStaffName(event.target.value)}
+                          placeholder="Employee name"
+                        />
+                        <input
+                          className="opcr-approved-position"
+                          value={staffPosition}
+                          onChange={(event) => setStaffPosition(event.target.value)}
+                          placeholder="Position"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <p className="opcr-approved-name">
+                          {staffName || <span className="opcr-signer-placeholder">Name</span>}
+                        </p>
+                        {staffPosition ? (
+                          <p className="opcr-approved-position">{staffPosition}</p>
+                        ) : null}
+                      </>
+                    )}
                     <p className="opcr-closing-role">Employee</p>
                   </td>
                   <td className="opcr-closing-date">

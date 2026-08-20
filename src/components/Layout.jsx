@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import {
   ChevronUp,
   ClipboardList,
+  CalendarDays,
   LayoutGrid,
   LogOut,
   ScrollText,
@@ -50,6 +51,10 @@ export default function Layout() {
           <NavLink to="/" end className={linkClass}>
             <LayoutGrid size={18} />
             Tally board
+          </NavLink>
+          <NavLink to="/daily" className={linkClass}>
+            <CalendarDays size={18} />
+            Daily log
           </NavLink>
           <NavLink to="/opcr" className={linkClass}>
             <ClipboardList size={18} />

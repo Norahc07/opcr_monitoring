@@ -140,6 +140,30 @@ select {
   width: 100%;
 }
 
+.opcr-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: #64748b;
+  cursor: grab;
+}
+
+.opcr-drag-handle:active {
+  cursor: grabbing;
+}
+
+.opcr-row-dragging {
+  opacity: 0.45;
+}
+
+.opcr-row-drop td {
+  box-shadow: inset 0 3px 0 0 #0f766e;
+}
+
 .opcr-sheet th,
 .opcr-sheet td,
 .opcr-approved th,
@@ -505,13 +529,11 @@ select {
     display: flex;
     flex-direction: column;
     width: 100%;
-    height: 7.72in; /* 8.5in minus @page margins, with a little room for the browser footer */
-    max-height: 7.72in;
-    overflow: hidden;
+    height: auto;
+    min-height: 7.72in;
+    overflow: visible;
     break-after: page;
     page-break-after: always;
-    break-inside: avoid;
-    page-break-inside: avoid;
   }
 
   .opcr-print-page:last-child {

@@ -1,3 +1,5 @@
+import { sectionForOutput } from './coreFunctions'
+
 export const FORM_STATUSES = ['draft', 'submitted', 'reviewed', 'finalized']
 
 export const SEMESTERS = [
@@ -150,6 +152,39 @@ export async function getActivePeriod(supabase) {
   return data
 }
 
+export function isTempEntryId(id) {
+  return !id || String(id).startsWith('tmp-')
+}
+
+export function hydrateOpcrEntry(entry) {
+  const output = String(entry.output || '').trim() || entry.opcr_items?.output || ''
+  const successIndicator =
+    String(entry.success_indicator || '').trim() || entry.opcr_items?.success_indicator || ''
+  const section = Number(entry.section) > 0 ? Number(entry.section) : sectionForOutput(output)
+  return {
+    ...entry,
+    output,
+    success_indicator: successIndicator,
+    section,
+    sort_order: entry.sort_order ?? entry.opcr_items?.sort_order ?? 0,
+  }
+}
+
+function missingOpcrRowError(error) {
+  const message = error?.message || ''
+  if (
+    message.includes('output') ||
+    message.includes('success_indicator') ||
+    message.includes('section') ||
+    message.includes('sort_order')
+  ) {
+    return new Error(
+      'OPCR row editing is not set up yet. Open Supabase → SQL Editor → run supabase/opcr_editable.sql, then save again.',
+    )
+  }
+  return error
+}
+
 export async function ensureUserForm(supabase, userId, periodId) {
   const { data: existing, error: existingError } = await supabase
     .from('opcr_forms')
@@ -197,19 +232,29 @@ export async function ensureUserForm(supabase, userId, periodId) {
 
   if (entriesError) throw entriesError
 
-  const existingItemIds = new Set((entries || []).map((entry) => entry.item_id))
-  const missing = (items || []).filter((item) => !existingItemIds.has(item.id))
-
-  if (missing.length) {
-    const { error: insertError } = await supabase.from('opcr_entries').insert(
-      missing.map((item) => ({
-        form_id: form.id,
-        item_id: item.id,
-        actual_accomplishment: '',
-        remarks: '',
-      })),
-    )
-    if (insertError) throw insertError
+  if (!(entries || []).length && (items || []).length) {
+    const payload = items.map((item) => ({
+      form_id: form.id,
+      item_id: item.id,
+      output: item.output || '',
+      success_indicator: item.success_indicator || '',
+      section: sectionForOutput(item.output),
+      sort_order: item.sort_order || 0,
+      actual_accomplishment: '',
+      remarks: '',
+    }))
+    const { error: insertError } = await supabase.from('opcr_entries').insert(payload)
+    if (insertError) {
+      const { error: fallbackError } = await supabase.from('opcr_entries').insert(
+        items.map((item) => ({
+          form_id: form.id,
+          item_id: item.id,
+          actual_accomplishment: '',
+          remarks: '',
+        })),
+      )
+      if (fallbackError) throw missingOpcrRowError(insertError)
+    }
   }
 
   return loadFormBundle(supabase, form.id)
@@ -231,9 +276,9 @@ export async function loadFormBundle(supabase, formId) {
 
   if (entriesError) throw entriesError
 
-  const sorted = (entries || []).sort(
-    (a, b) => (a.opcr_items?.sort_order || 0) - (b.opcr_items?.sort_order || 0),
-  )
+  const sorted = (entries || [])
+    .map(hydrateOpcrEntry)
+    .sort((a, b) => (a.section - b.section) || (a.sort_order || 0) - (b.sort_order || 0))
 
   return { form, entries: sorted }
 }
@@ -410,20 +455,69 @@ export async function saveFormSigner(supabase, formId, payload) {
   return dateValue
 }
 
-export async function saveEntries(supabase, entries) {
-  const updates = entries.map((entry) =>
-    supabase
+export async function saveOpcrRows(supabase, formId, entries, removedIds = []) {
+  const realRemoved = removedIds.filter((id) => id && !isTempEntryId(id))
+  if (realRemoved.length) {
+    const { error: deleteError } = await supabase
       .from('opcr_entries')
-      .update({
-        actual_accomplishment: entry.actual_accomplishment || '',
-        remarks: entry.remarks || '',
-      })
-      .eq('id', entry.id),
-  )
+      .delete()
+      .in('id', realRemoved)
+      .eq('form_id', formId)
+    if (deleteError) throw missingOpcrRowError(deleteError)
+  }
 
-  const results = await Promise.all(updates)
-  const failed = results.find((result) => result.error)
-  if (failed?.error) throw failed.error
+  const existing = entries.filter((entry) => !isTempEntryId(entry.id))
+  const created = entries.filter((entry) => isTempEntryId(entry.id))
+
+  if (existing.length) {
+    const results = await Promise.all(
+      existing.map((entry) =>
+        supabase
+          .from('opcr_entries')
+          .update({
+            output: entry.output || '',
+            success_indicator: entry.success_indicator || '',
+            section: Number(entry.section) || 1,
+            sort_order: Number(entry.sort_order) || 0,
+            actual_accomplishment: entry.actual_accomplishment || '',
+            remarks: entry.remarks || '',
+          })
+          .eq('id', entry.id),
+      ),
+    )
+    const failed = results.find((result) => result.error)
+    if (failed?.error) throw missingOpcrRowError(failed.error)
+  }
+
+  let inserted = []
+  if (created.length) {
+    const { data, error: insertError } = await supabase
+      .from('opcr_entries')
+      .insert(
+        created.map((entry) => ({
+          form_id: formId,
+          item_id: entry.item_id || null,
+          output: entry.output || '',
+          success_indicator: entry.success_indicator || '',
+          section: Number(entry.section) || 1,
+          sort_order: Number(entry.sort_order) || 0,
+          actual_accomplishment: entry.actual_accomplishment || '',
+          remarks: entry.remarks || '',
+        })),
+      )
+      .select('*, opcr_items(*)')
+    if (insertError) throw missingOpcrRowError(insertError)
+    inserted = (data || []).map(hydrateOpcrEntry)
+  }
+
+  const queue = [...inserted]
+  return entries
+    .map((entry) => (isTempEntryId(entry.id) ? queue.shift() : hydrateOpcrEntry(entry)))
+    .filter(Boolean)
+}
+
+export async function saveEntries(supabase, entries) {
+  return saveOpcrRows(supabase, entries[0]?.form_id, entries, [])
 }
 
 export async function saveRatings(supabase, entries) {

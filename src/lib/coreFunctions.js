@@ -154,6 +154,28 @@ export const SECTION4 = [
 ]
 
 export const CORE_FUNCTIONS = [...SECTION1, ...SECTION2, ...SECTION3, ...SECTION4]
+export const OPCR_SECTIONS = [SECTION1, SECTION2, SECTION3, SECTION4]
+
+export function sectionForOutput(output) {
+  const name = String(output || '')
+    .trim()
+    .toLowerCase()
+  if (!name) return 1
+
+  for (let index = 0; index < OPCR_SECTIONS.length; index += 1) {
+    const exact = OPCR_SECTIONS[index].some((spec) => spec.keys.some((key) => name === key))
+    if (exact) return index + 1
+  }
+
+  for (let index = 0; index < OPCR_SECTIONS.length; index += 1) {
+    const fuzzy = OPCR_SECTIONS[index].some((spec) =>
+      spec.keys.some((key) => key.length > 3 && name.includes(key)),
+    )
+    if (fuzzy) return index + 1
+  }
+
+  return 1
+}
 
 export function matchCoreFunction(output) {
   const name = String(output || '')

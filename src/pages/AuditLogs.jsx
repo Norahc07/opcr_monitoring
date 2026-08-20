@@ -6,6 +6,7 @@ import { Alert, EmptyState, LoadingState, PageHeader, Segmented } from '../compo
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'Login', label: 'Login' },
+  { id: 'Daily log', label: 'Daily' },
   { id: 'Tally board', label: 'Tally' },
   { id: 'My OPCR', label: 'OPCR' },
   { id: 'Users', label: 'Users' },

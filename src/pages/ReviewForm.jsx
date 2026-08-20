@@ -161,9 +161,11 @@ export default function ReviewForm() {
               {entries.map((entry) => (
                 <tr key={entry.id} className="border-t border-slate-100 align-top">
                   <td className="px-3 py-3">
-                    <p className="font-medium text-slate-900">{entry.opcr_items?.output}</p>
-                    <p className="mt-1 max-w-xs text-xs text-slate-500">
-                      {entry.opcr_items?.success_indicator}
+                    <p className="font-medium text-slate-900">
+                      {entry.output || entry.opcr_items?.output}
+                    </p>
+                    <p className="mt-1 max-w-xs whitespace-pre-wrap text-xs text-slate-500">
+                      {entry.success_indicator || entry.opcr_items?.success_indicator}
                     </p>
                   </td>
                   <td className="px-3 py-3">

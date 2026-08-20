@@ -9,6 +9,7 @@ import MyOpcr from './pages/MyOpcr'
 import ReviewForm from './pages/ReviewForm'
 import Profile from './pages/Profile'
 import TallyBoard from './pages/TallyBoard'
+import DailyLog from './pages/DailyLog'
 import AuditLogs from './pages/AuditLogs'
 import Users from './pages/Users'
 
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/" element={<TallyBoard />} />
           <Route path="/tally" element={<Navigate to="/" replace />} />
           <Route path="/opcr" element={<MyOpcr />} />
+          <Route path="/daily" element={<DailyLog />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<Navigate to="/" replace />} />
           <Route

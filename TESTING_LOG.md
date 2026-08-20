@@ -92,7 +92,7 @@ Notes: ________________________________
 ## C. Header and navigation
 
 **C1.** Check the sidebar.  
-Expected: Tally board, My OPCR, Profile. Admin also sees Users and Audit logs. Staff does not.  
+Expected: Tally board, Daily log, My OPCR, Profile. Admin also sees Users and Audit logs. Staff does not.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
@@ -250,6 +250,37 @@ Notes: ________________________________
 
 ---
 
+## L. Daily log
+
+Run `supabase/daily.sql` in the SQL editor once before this section.
+
+**L1.** Open Daily log from the sidebar.  
+Expected: Core functions with today’s date, count, semester total, and notes.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**L2.** Enter counts for one or more items. Click Save day. Open Tally board → Accomplishments.  
+Expected: Your column shows the same running totals for January–June or July–December.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**L3.** Save another day with more counts for the same item.  
+Expected: Tally shows the sum of both days.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**L4.** Change an earlier day’s count and save.  
+Expected: Tally updates to the new sum.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**L5.** As staff, you only see your own daily log.  
+Expected: No other staff’s daily counts.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+---
+
 ## G. My OPCR
 
 **G1.** Open My OPCR.  
@@ -268,7 +299,7 @@ Expected: Values are still there.
 Notes: ________________________________
 
 **G4.** Check all four core function sections.  
-Expected: Names match the tally. Success indicators are readable.  
+Expected: Default names and success indicators are shown. Click Edit to change Output and Success Indicator.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
@@ -277,7 +308,28 @@ Expected: Text is still there.
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
-**G6.** Fill comments and closing dates (discussed, assessed, final rating). Save. Refresh.  
+**G5a.** Click Edit, change an Output or Success Indicator, Save, refresh.  
+Expected: The new text is still there. Tally board names do not change.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G5b.** Click Edit, Add row on a section, fill Output and Success Indicator, Save, refresh.  
+Expected: The new row is still there.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G5c.** Click Edit, Remove row, Save, refresh.  
+Expected: That row is gone from this person’s OPCR only.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G5d.** Click Edit, drag a row handle to another row or section, Save, refresh.  
+Expected: The row stays in the new position / section.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G6.** Fill comments and closing dates (discussed, assessed, final rating). Edit Discussed with name and position. Save. Refresh.  
+Expected: Values are still there, including Discussed with.  
 Expected: Values are still there.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
@@ -386,7 +438,7 @@ Expected: Redirected away. No Audit logs menu.
 Notes: ________________________________
 
 **K2.** As admin, open Audit logs.  
-Expected: Table of recent activity (or empty-state with setup note). Filters: All, Login, Tally, OPCR, Users, Profile.  
+Expected: Table of recent activity (or empty-state with setup note). Filters: All, Login, Daily, Tally, OPCR, Users, Profile.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
