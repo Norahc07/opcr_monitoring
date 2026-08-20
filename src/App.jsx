@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext'
 import AdminRoute from './components/AdminRoute'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import DesktopOnly from './components/DesktopOnly'
 import Login from './pages/Login'
 import MyOpcr from './pages/MyOpcr'
 import ReviewForm from './pages/ReviewForm'
@@ -12,8 +13,9 @@ import Users from './pages/Users'
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Routes>
+    <DesktopOnly>
+      <AuthProvider>
+        <Routes>
         <Route path="/login" element={<Login />} />
         <Route
           element={
@@ -46,6 +48,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </AuthProvider>
+      </AuthProvider>
+    </DesktopOnly>
   )
 }
