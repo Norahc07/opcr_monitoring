@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import { AuthContext } from './auth-context'
 
 async function fetchProfile(userId) {
@@ -98,9 +99,11 @@ export function AuthProvider({ children }) {
           password,
         })
         if (signInError) throw signInError
+        await writeAudit(supabase, 'Signed in', 'Login', email)
       },
       async signOut() {
         if (!supabase) return
+        await writeAudit(supabase, 'Signed out', 'Login')
         await supabase.auth.signOut()
       },
       async refreshProfile() {

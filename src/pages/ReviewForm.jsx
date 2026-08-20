@@ -5,6 +5,7 @@ import StatusBadge from '../components/StatusBadge'
 import { Alert, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import {
   calcEntryAverage,
   calcFinalAverage,
@@ -87,6 +88,16 @@ export default function ReviewForm() {
         .single()
       if (formError) throw formError
       setForm(data)
+      await writeAudit(
+        supabase,
+        nextStatus === 'finalized'
+          ? 'Finalized OPCR'
+          : nextStatus === 'reviewed'
+            ? 'Marked OPCR reviewed'
+            : 'Saved OPCR ratings',
+        'My OPCR',
+        data?.profiles?.full_name || '',
+      )
       showToast(
         nextStatus === 'finalized'
           ? 'OPCR finalized.'

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutGrid,
   LogOut,
+  ScrollText,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -33,7 +34,7 @@ export default function Layout() {
   }, [])
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[272px_1fr] print:block">
+    <div className="min-h-screen lg:grid lg:grid-cols-[272px_1fr] print:block print:min-h-0">
       <aside className="bg-teal-950 text-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto print:hidden">
         <div className="px-5 py-6">
           <BrandLogo className="h-auto w-full max-w-[220px] object-contain" />
@@ -66,6 +67,10 @@ export default function Layout() {
               <NavLink to="/users" className={linkClass}>
                 <Users size={18} />
                 Users
+              </NavLink>
+              <NavLink to="/audit" className={linkClass}>
+                <ScrollText size={18} />
+                Audit logs
               </NavLink>
             </>
           )}

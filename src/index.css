@@ -471,7 +471,7 @@ select {
   /* Philippine long bond paper (8.5" × 13"), landscape */
   @page {
     size: 13in 8.5in;
-    margin: 0.4in;
+    margin: 0.32in 0.32in;
   }
 
   html,
@@ -479,6 +479,8 @@ select {
     height: auto !important;
     overflow: visible !important;
     background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .card {
@@ -489,14 +491,48 @@ select {
     padding: 0 !important;
   }
 
+  .opcr-sheet {
+    overflow: visible;
+    display: block;
+  }
+
   .opcr-print-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 7.72in; /* 8.5in minus @page margins, with a little room for the browser footer */
+    max-height: 7.72in;
+    overflow: hidden;
     break-after: page;
     page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .opcr-print-page:last-child {
     break-after: auto;
     page-break-after: auto;
+  }
+
+  .opcr-print-fill {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .opcr-print-fill > .opcr-functions {
+    flex: 1 1 auto;
+    height: 100% !important;
+  }
+
+  .opcr-print-fill .opcr-functions thead {
+    height: auto;
+  }
+
+  .opcr-print-fill .opcr-functions tbody {
+    height: 100%;
   }
 
   .opcr-print-page + .opcr-print-page thead.opcr-repeat-head {
@@ -516,10 +552,6 @@ select {
     margin-top: 0;
   }
 
-  .opcr-sheet {
-    overflow: visible;
-  }
-
   .opcr-sheet table,
   .opcr-approved,
   .opcr-functions,
@@ -530,11 +562,12 @@ select {
   }
 
   .opcr-print-header {
-    margin-bottom: 0.35rem;
+    flex: 0 0 auto;
+    margin-bottom: 0.2rem;
   }
 
   .opcr-print-header > * + * {
-    margin-top: 0.3rem !important;
+    margin-top: 0.22rem !important;
   }
 
   .opcr-sheet header h1 {
@@ -566,20 +599,24 @@ select {
     margin-top: 0;
   }
 
+  .opcr-approved {
+    flex: 0 0 auto;
+  }
+
   .opcr-approved.mt-6 {
-    margin-top: 0.4rem !important;
+    margin-top: 0.2rem !important;
   }
 
   .opcr-approved .opcr-approved-label,
   .opcr-approved .opcr-approved-role {
-    padding: 0.15rem 0.4rem;
+    padding: 0.18rem 0.4rem;
     font-size: 0.65rem;
   }
 
   .opcr-approved .opcr-approved-sign,
   .opcr-approved .opcr-approved-date {
-    height: 2.4rem;
-    padding: 0.15rem 0.4rem;
+    height: 2.75rem;
+    padding: 0.2rem 0.4rem;
   }
 
   .opcr-approved-date-value {
@@ -587,29 +624,53 @@ select {
   }
 
   .opcr-sheet thead th {
-    padding: 0.2rem 0.35rem;
+    padding: 0.22rem 0.35rem;
     font-size: 0.62rem;
   }
 
   .opcr-sheet .opcr-section td {
-    padding: 0.18rem 0.4rem;
+    padding: 0.2rem 0.4rem;
     font-size: 0.62rem;
+    height: auto;
+  }
+
+  .opcr-functions tbody tr:not(.opcr-section):not(.opcr-average) {
+    height: 1%;
   }
 
   .opcr-sheet tbody td {
-    padding: 0.2rem 0.4rem;
-    font-size: 0.65rem;
-    line-height: 1.25;
+    padding: 0.28rem 0.4rem;
+    font-size: 0.68rem;
+    line-height: 1.3;
     vertical-align: top;
   }
 
-  .opcr-sheet p.min-h-16,
-  .opcr-comments-box {
+  .opcr-comments-row {
+    height: 100%;
+  }
+
+  .opcr-sheet p.min-h-16 {
     min-height: 0 !important;
+    height: 100%;
+  }
+
+  .opcr-comments-box {
+    min-height: 3.4in !important;
+    height: 100%;
+  }
+
+  .opcr-closing {
+    flex: 0 0 auto;
+  }
+
+  .opcr-closing .opcr-closing-sign,
+  .opcr-closing .opcr-closing-date {
+    height: 1.7in;
   }
 
   .opcr-sheet textarea.field {
-    min-height: 2.2rem;
+    min-height: 100%;
+    height: 100%;
     border: none;
     box-shadow: none;
     padding: 0.1rem;

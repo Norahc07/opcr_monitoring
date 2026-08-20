@@ -3,6 +3,7 @@ import { Pencil, Printer } from 'lucide-react'
 import { Alert, Button, LoadingState, Toast, useToast } from '../components/ui'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import {
   calcFinalAverage,
   ensureUserForm,
@@ -369,6 +370,12 @@ export default function MyOpcr() {
           : current,
       )
       setEditingIdentity(false)
+      await writeAudit(
+        supabase,
+        'Saved OPCR',
+        'My OPCR',
+        period?.title || String(period?.year || year || ''),
+      )
       showToast('OPCR saved.')
     } catch (err) {
       setError(err.message)
@@ -388,14 +395,14 @@ export default function MyOpcr() {
   if (loading) return <LoadingState label="Loading your OPCR…" />
 
   return (
-    <div className="w-full space-y-4 pb-20">
+    <div className="w-full space-y-4 pb-20 print:space-y-0 print:pb-0">
       {error && (
         <div className="print-hide">
           <Alert tone="danger">{error}</Alert>
         </div>
       )}
 
-      <article className="card relative overflow-hidden p-5 sm:p-7">
+      <article className="card relative overflow-hidden p-5 sm:p-7 print:overflow-visible">
         <div className="absolute top-5 right-5 z-10 flex gap-2 sm:top-7 sm:right-7 print-hide">
           <Button variant="secondary" onClick={printOpcr}>
             <Printer size={16} />
@@ -520,53 +527,62 @@ export default function MyOpcr() {
                 </tr>
               </tbody>
             </table>
-            <OpcrFunctionsTable>
-                <tr className="opcr-section">
-                  <td colSpan={8}>Core Function:</td>
-                </tr>
-                <OpcrItemRows
-                  rows={section1Entries}
-                  locked={locked}
-                  editing={editingIdentity}
-                  onUpdate={updateEntry}
-                />
-            </OpcrFunctionsTable>
+            <div className="opcr-print-fill">
+              <OpcrFunctionsTable>
+                  <tr className="opcr-section">
+                    <td colSpan={8}>Core Function:</td>
+                  </tr>
+                  <OpcrItemRows
+                    rows={section1Entries}
+                    locked={locked}
+                    editing={editingIdentity}
+                    onUpdate={updateEntry}
+                  />
+              </OpcrFunctionsTable>
+            </div>
           </div>
 
           <div className="opcr-print-page">
-            <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                <OpcrItemRows
-                  rows={section2Entries}
-                  locked={locked}
-                  editing={editingIdentity}
-                  onUpdate={updateEntry}
-                />
-            </OpcrFunctionsTable>
+            <div className="opcr-print-fill">
+              <OpcrFunctionsTable headClassName="opcr-repeat-head">
+                  <OpcrItemRows
+                    rows={section2Entries}
+                    locked={locked}
+                    editing={editingIdentity}
+                    onUpdate={updateEntry}
+                  />
+              </OpcrFunctionsTable>
+            </div>
           </div>
 
           <div className="opcr-print-page">
-            <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                <OpcrItemRows
-                  rows={section3Entries}
-                  locked={locked}
-                  editing={editingIdentity}
-                  onUpdate={updateEntry}
-                />
-            </OpcrFunctionsTable>
+            <div className="opcr-print-fill">
+              <OpcrFunctionsTable headClassName="opcr-repeat-head">
+                  <OpcrItemRows
+                    rows={section3Entries}
+                    locked={locked}
+                    editing={editingIdentity}
+                    onUpdate={updateEntry}
+                  />
+              </OpcrFunctionsTable>
+            </div>
           </div>
 
           <div className="opcr-print-page">
-            <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                <OpcrItemRows
-                  rows={section4Entries}
-                  locked={locked}
-                  editing={editingIdentity}
-                  onUpdate={updateEntry}
-                />
-            </OpcrFunctionsTable>
+            <div className="opcr-print-fill">
+              <OpcrFunctionsTable headClassName="opcr-repeat-head">
+                  <OpcrItemRows
+                    rows={section4Entries}
+                    locked={locked}
+                    editing={editingIdentity}
+                    onUpdate={updateEntry}
+                  />
+              </OpcrFunctionsTable>
+            </div>
           </div>
 
           <div className="opcr-print-page">
+            <div className="opcr-print-fill">
             <table className="opcr-functions">
               <OpcrColGroup />
               <tbody>
@@ -583,7 +599,7 @@ export default function MyOpcr() {
                     Comments and Recommendation for Development Purposes
                   </td>
                 </tr>
-                <tr>
+                <tr className="opcr-comments-row">
                   <td colSpan={8}>
                     {editingIdentity && !locked ? (
                       <textarea
@@ -599,6 +615,7 @@ export default function MyOpcr() {
                 </tr>
               </tbody>
             </table>
+            </div>
             <table className="opcr-closing">
               <colgroup>
                 <col style={{ width: '20%' }} />

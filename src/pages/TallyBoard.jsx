@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import { Alert, Button, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
 import {
   buildBoardRows,
@@ -263,6 +264,12 @@ export default function TallyBoard() {
       }
       setDirty(remaining)
       writeBoardCache({ period, items, people, rows: currentRows })
+      await writeAudit(
+        supabase,
+        'Saved accomplishments',
+        'Tally board',
+        `${payload.length} cell${payload.length === 1 ? '' : 's'}`,
+      )
       showToast('Your accomplishments were saved. Admin can see them now.')
     } catch (err) {
       setError(err.message)
@@ -286,6 +293,12 @@ export default function TallyBoard() {
       await saveAdminTallies(supabase, period.id, payload)
       setDirty({})
       writeBoardCache({ period, items, people, rows })
+      await writeAudit(
+        supabase,
+        'Saved targets',
+        'Tally board',
+        `${payload.length} cell${payload.length === 1 ? '' : 's'}`,
+      )
       showToast('Targets saved.')
     } catch (err) {
       setError(err.message)

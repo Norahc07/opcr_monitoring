@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Camera, ImagePlus, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import CropPhotoModal from '../components/CropPhotoModal'
 import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
 
@@ -109,6 +110,7 @@ export default function Profile() {
       if (saveError) throw saveError
       await refreshProfile?.()
       closeCrop()
+      await writeAudit(supabase, 'Updated profile photo', 'Profile')
       showToast('Profile photo updated.')
     } catch (err) {
       setError(

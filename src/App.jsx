@@ -9,6 +9,7 @@ import MyOpcr from './pages/MyOpcr'
 import ReviewForm from './pages/ReviewForm'
 import Profile from './pages/Profile'
 import TallyBoard from './pages/TallyBoard'
+import AuditLogs from './pages/AuditLogs'
 import Users from './pages/Users'
 
 export default function App() {
@@ -42,6 +43,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <Users />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <AdminRoute>
+                <AuditLogs />
               </AdminRoute>
             }
           />

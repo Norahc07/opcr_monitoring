@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
+import { writeAudit } from '../lib/audit'
 import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
 
 const emptyStaff = {
@@ -141,6 +142,12 @@ export default function Users() {
           })
           .eq('id', form.user_id)
         if (saveError) throw saveError
+        await writeAudit(
+          supabase,
+          'Updated staff',
+          'Users',
+          `${form.full_name.trim() || 'Staff'} · ${form.role}`,
+        )
         showToast(`Updated ${form.full_name || 'staff'}.`)
       } else {
         const { error: createError } = await supabase.rpc('admin_create_login', {
@@ -153,6 +160,12 @@ export default function Users() {
           p_role: form.role,
         })
         if (createError) throw createError
+        await writeAudit(
+          supabase,
+          'Created staff',
+          'Users',
+          `${form.email.trim()} · ${form.full_name.trim() || 'Staff'} · ${form.role}`,
+        )
         showToast(`Created staff account for ${form.email.trim()}.`)
       }
       setModal(null)
@@ -173,6 +186,12 @@ export default function Users() {
         p_user_id: row.user_id,
       })
       if (deleteError) throw deleteError
+      await writeAudit(
+        supabase,
+        'Deleted staff',
+        'Users',
+        `${row.email || row.full_name || 'Staff'}`,
+      )
       setConfirm(null)
       showToast(`Removed ${row.email || row.full_name}.`)
       await load()
