@@ -36,7 +36,7 @@ export default function Login() {
             LGU Mauban, Quezon
           </p>
           <h1 className="mt-3 max-w-md text-5xl leading-tight font-semibold tracking-tight">
-            Office Performance, clearly tracked.
+            Office Performance Commitment and Review (OPCR)
           </h1>
           <p className="mt-4 max-w-md text-base leading-7 text-teal-100/80">
             Enter your tally, follow your targets, and keep OPCR records in one clean workspace for
