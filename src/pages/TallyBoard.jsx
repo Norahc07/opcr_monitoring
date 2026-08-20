@@ -80,7 +80,7 @@ export default function TallyBoard() {
   const tablePeople = useMemo(() => people.filter((person) => person.user_id), [people])
 
   function canEditCell(personId) {
-    if (isTargetView) return isAdmin
+    if (isAdmin) return true
     return Boolean(myStaffId && personId === myStaffId)
   }
 
@@ -226,38 +226,46 @@ export default function TallyBoard() {
       },
     }))
     setDirty((current) => ({ ...current, [key]: true }))
-    if (!isTargetView) scheduleStaffSave()
+    if (!isTargetView) scheduleAccomplishmentSave()
   }
 
-  function scheduleStaffSave() {
+  function scheduleAccomplishmentSave() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      saveMine()
+      saveAccomplishments()
     }, 700)
   }
 
-  async function saveMine() {
-    if (!period || !myStaffId || !user) return
+  async function saveAccomplishments() {
+    if (!period || !user) return
     const currentRows = rowsRef.current
-    const payload = Object.keys(dirtyRef.current)
+    let payload = Object.keys(dirtyRef.current)
       .map((key) => currentRows[key])
-      .filter((row) => row && row.staff_id === myStaffId)
+      .filter(Boolean)
+    if (!isAdmin) {
+      if (!myStaffId) return
+      payload = payload.filter((row) => row.staff_id === myStaffId)
+    }
     if (!payload.length) return
 
     setSaving(true)
     setError('')
     try {
-      await saveStaffTallies(
-        supabase,
-        period.id,
-        myStaffId,
-        user.id,
-        payload.map((row) => ({
-          item_id: row.item_id,
-          semester: row.semester,
-          accomplished: row.accomplished,
-        })),
-      )
+      if (isAdmin) {
+        await saveAdminTallies(supabase, period.id, payload)
+      } else {
+        await saveStaffTallies(
+          supabase,
+          period.id,
+          myStaffId,
+          user.id,
+          payload.map((row) => ({
+            item_id: row.item_id,
+            semester: row.semester,
+            accomplished: row.accomplished,
+          })),
+        )
+      }
       const remaining = { ...dirtyRef.current }
       for (const row of payload) {
         delete remaining[tallyKey(row.staff_id, row.item_id, row.semester)]
@@ -270,7 +278,11 @@ export default function TallyBoard() {
         'Tally board',
         `${payload.length} cell${payload.length === 1 ? '' : 's'}`,
       )
-      showToast('Your accomplishments were saved. Admin can see them now.')
+      showToast(
+        isAdmin
+          ? 'Accomplishments saved.'
+          : 'Your accomplishments were saved. Admin can see them now.',
+      )
     } catch (err) {
       setError(err.message)
     } finally {
@@ -319,8 +331,8 @@ export default function TallyBoard() {
         description={
           isAdmin
             ? isTargetView
-              ? 'Set each person’s targets in the table below. Staff type accomplishments in their own column.'
-              : 'Staff type their counts in their column. Green means the target is met; red means it is not yet.'
+              ? 'Set each person’s targets in the table below. You can also type accomplishments in any staff column.'
+              : 'Type accomplishment counts in any staff column. Green means the target is met; red means it is not yet.'
             : 'Type your accomplishment counts in your column (highlighted). They appear on the admin board automatically.'
         }
         actions={
@@ -351,6 +363,11 @@ export default function TallyBoard() {
         {isTargetView ? (
           <>
             Enter <strong>targets</strong> for each person in the columns below, then Save targets.
+          </>
+        ) : isAdmin ? (
+          <>
+            Type counts for any staff in January–June and July–December. They save automatically.
+            Green means the target is met; red means not yet.
           </>
         ) : myStaffId ? (
           <>

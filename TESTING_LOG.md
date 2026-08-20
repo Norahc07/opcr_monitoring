@@ -233,6 +233,11 @@ Expected: Admin tally updates.
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
+**F8.** As admin, on Accomplishments, type counts in other staff columns.  
+Expected: All staff columns are editable. Counts save automatically. Refresh keeps the numbers.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
 ---
 
 ## G. My OPCR
@@ -350,7 +355,7 @@ Expected: Data is still there.
 Notes: ________________________________
 
 **J3.** Compare staff and admin.  
-Expected: Staff has no Users or Audit logs menu and cannot set other people’s targets. Admin has full tally, Users, and Audit logs.  
+Expected: Staff has no Users or Audit logs menu and cannot set other people’s targets or accomplishments. Admin has full tally (including typing in every staff column), Users, and Audit logs.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
