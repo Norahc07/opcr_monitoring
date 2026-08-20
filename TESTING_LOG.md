@@ -194,6 +194,11 @@ Expected: Staff cannot edit other people’s targets.
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
+**E8.** As admin, on Target, click Print.  
+Expected: Print preview shows the target tally (staff columns and totals), not the on-screen help text.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
 ---
 
 ## F. Tally board — Accomplishments
@@ -235,6 +240,11 @@ Notes: ________________________________
 
 **F8.** As admin, on Accomplishments, type counts in other staff columns.  
 Expected: All staff columns are editable. Counts save automatically. Refresh keeps the numbers.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**F9.** On Accomplishments, click Print (admin or staff).  
+Expected: Print preview shows accomplishment counts, targets under the numbers, and red/green status.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 

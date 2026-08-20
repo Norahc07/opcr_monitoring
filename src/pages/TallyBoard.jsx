@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Printer } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
@@ -319,12 +320,20 @@ export default function TallyBoard() {
     }
   }
 
+  function printTally() {
+    document.body.classList.add('printing-tally')
+    const done = () => document.body.classList.remove('printing-tally')
+    window.addEventListener('afterprint', done, { once: true })
+    window.setTimeout(() => window.print(), 50)
+  }
+
   if (loading && !period) return <LoadingState label="Loading office tally…" />
 
   const totalColLabel = isTargetView ? 'Total target' : 'Total accomplished'
 
   return (
-    <div className="w-full space-y-5 pb-20">
+    <div className="tally-board w-full space-y-5 pb-20 print:space-y-3 print:pb-0">
+      <div className="print-hide">
       <PageHeader
         kicker={period?.office_name}
         title="Office tally sheet"
@@ -347,6 +356,10 @@ export default function TallyBoard() {
                 ]}
               />
             )}
+            <Button variant="secondary" onClick={printTally}>
+              <Printer size={16} />
+              Print
+            </Button>
             {liveNotice && (
               <span className="text-xs font-medium text-teal-700">{liveNotice}</span>
             )}
@@ -356,9 +369,23 @@ export default function TallyBoard() {
           </div>
         }
       />
+      </div>
 
-      {error && <Alert tone="danger">{error}</Alert>}
+      <header className="tally-print-heading">
+        <p className="tally-print-kicker">{period?.office_name || 'E-Learning Ville'}</p>
+        <h1>Office tally sheet</h1>
+        <p>
+          {isTargetView ? 'Targets' : 'Accomplishments'} · January to December {year}
+        </p>
+      </header>
 
+      {error && (
+        <div className="print-hide">
+          <Alert tone="danger">{error}</Alert>
+        </div>
+      )}
+
+      <div className="print-hide">
       <Alert tone={isTargetView ? 'warning' : 'info'}>
         {isTargetView ? (
           <>
@@ -381,12 +408,15 @@ export default function TallyBoard() {
           </>
         )}
       </Alert>
+      </div>
 
       {tablePeople.length === 0 && (
+        <div className="print-hide">
         <Alert tone="warning">
           No staff accounts yet. Create logins in Supabase, then run{' '}
           <strong>supabase/staffs.sql</strong> in the SQL editor — or add staff on Users.
         </Alert>
+        </div>
       )}
 
       {grouped.map((group) => (
@@ -569,7 +599,7 @@ export default function TallyBoard() {
       ))}
 
       {isTargetView && (
-        <div className="sticky bottom-4 z-10 flex justify-end">
+        <div className="sticky bottom-4 z-10 flex justify-end print-hide">
           <Button disabled={saving} onClick={save} className="shadow-lg">
             {saving ? 'Saving…' : 'Save targets'}
           </Button>

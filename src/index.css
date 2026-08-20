@@ -84,6 +84,10 @@ select {
   border: 1px solid rgb(216 228 225 / 0.9);
 }
 
+.tally-print-heading {
+  display: none;
+}
+
 .table-scroll {
   overflow-x: auto;
 }
@@ -698,5 +702,94 @@ select {
   .toast-popup,
   .print-hide {
     display: none !important;
+  }
+
+  .tally-print-heading {
+    display: block;
+    margin-bottom: 0.45rem;
+    text-align: center;
+  }
+
+  .tally-print-heading h1 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #0f172a;
+  }
+
+  .tally-print-kicker {
+    margin-bottom: 0.2rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #0f766e;
+  }
+
+  .tally-print-heading p:last-child {
+    margin-top: 0.2rem;
+    font-size: 0.78rem;
+    color: #334155;
+  }
+
+  .tally-board .card {
+    overflow: visible !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 0.45rem;
+    border: 1px solid #000 !important;
+  }
+
+  .tally-board .table-scroll {
+    overflow: visible !important;
+  }
+
+  .tally-board .table-scroll table {
+    min-width: 0 !important;
+    width: 100% !important;
+    border-collapse: collapse;
+    table-layout: auto;
+  }
+
+  .tally-board thead {
+    display: table-header-group;
+  }
+
+  .tally-board th,
+  .tally-board td {
+    border: 1px solid #000 !important;
+    padding: 0.18rem 0.22rem !important;
+    font-size: 0.6rem;
+    line-height: 1.25;
+    vertical-align: middle;
+  }
+
+  .tally-board .sticky {
+    position: static !important;
+  }
+
+  .tally-board h2 {
+    padding: 0.28rem 0.4rem !important;
+    font-size: 0.68rem !important;
+  }
+
+  .tally-board input.field {
+    width: 100% !important;
+    min-width: 0;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: 0.68rem;
+    font-weight: 700;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  .tally-board input.field::-webkit-outer-spin-button,
+  .tally-board input.field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }
