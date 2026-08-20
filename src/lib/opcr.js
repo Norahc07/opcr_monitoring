@@ -284,7 +284,7 @@ async function syncOpcrItemsToTally(supabase, periodId, entries) {
     const category = categoryBySection[section] || 'Core Functions'
     const output = String(entry.output || '').trim() || 'New row'
     const success = String(entry.success_indicator || '').trim()
-    const sortOrder = sortByEntry[entry.id] ?? Number(entry.sort_order) || 0
+    const sortOrder = (sortByEntry[entry.id] ?? Number(entry.sort_order)) || 0
 
     if (!entry.item_id) {
       const { data, error } = await supabase
