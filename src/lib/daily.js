@@ -1,5 +1,5 @@
-import { coreFunctionLabel, orderCoreFunctionItems } from './coreFunctions'
-import { formatCount, getActivePeriod, getLinkedStaff, toCount } from './opcr'
+import { coreFunctionLabel, orderCoreFunctionItems, sectionForOutput, sectionLabel } from './coreFunctions'
+import { formatCount, getActivePeriod, getLinkedStaff, hydrateOpcrEntry, toCount } from './opcr'
 
 export function todayValue() {
   const now = new Date()
@@ -41,32 +41,98 @@ export async function loadDailyContext(supabase, userId) {
     return { period: null, staff, items: [], logs: [] }
   }
 
-  const [{ data: items, error: itemsError }, { data: logs, error: logsError }] = await Promise.all([
-    supabase
-      .from('opcr_items')
-      .select('*')
-      .eq('period_id', period.id)
-      .order('sort_order', { ascending: true }),
-    staff?.id
-      ? supabase
-          .from('opcr_daily_logs')
-          .select('*')
-          .eq('period_id', period.id)
-          .eq('staff_id', staff.id)
-          .order('work_date', { ascending: false })
-          .limit(400)
-      : Promise.resolve({ data: [], error: null }),
-  ])
+  const [{ data: items, error: itemsError }, { data: logs, error: logsError }, { data: form, error: formError }] =
+    await Promise.all([
+      supabase
+        .from('opcr_items')
+        .select('*')
+        .eq('period_id', period.id)
+        .order('sort_order', { ascending: true }),
+      staff?.id
+        ? supabase
+            .from('opcr_daily_logs')
+            .select('*')
+            .eq('period_id', period.id)
+            .eq('staff_id', staff.id)
+            .order('work_date', { ascending: false })
+            .limit(400)
+        : Promise.resolve({ data: [], error: null }),
+      userId
+        ? supabase
+            .from('opcr_forms')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('period_id', period.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
 
   if (itemsError) throw itemsError
   if (logsError) throw missingDailyError(logsError)
+  if (formError) throw formError
+
+  let entries = []
+  if (form?.id) {
+    const { data: entryRows, error: entriesError } = await supabase
+      .from('opcr_entries')
+      .select('*, opcr_items(*)')
+      .eq('form_id', form.id)
+    if (entriesError) throw entriesError
+    entries = (entryRows || []).map(hydrateOpcrEntry).sort(
+      (a, b) => (a.section - b.section) || (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0),
+    )
+  }
 
   return {
     period,
     staff,
-    items: orderCoreFunctionItems(items || []),
+    items: buildDailyItems(entries, items || [], period.id),
     logs: logs || [],
   }
+}
+
+function toDailyItemFromEntry(entry, periodId) {
+  const section = Number(entry.section) || 1
+  return {
+    id: entry.item_id || null,
+    entry_id: entry.id,
+    period_id: periodId,
+    category: sectionLabel(section),
+    output: entry.output || '',
+    success_indicator: entry.success_indicator || '',
+    sort_order: section * 1000 + (Number(entry.sort_order) || 0),
+    section,
+    pending: !entry.item_id,
+  }
+}
+
+function toDailyItemFromOffice(item) {
+  const section = Number(item.section) || sectionForOutput(item.output)
+  return {
+    ...item,
+    category: sectionLabel(section),
+    section,
+    pending: false,
+  }
+}
+
+export function buildDailyItems(entries, officeItems, periodId) {
+  const fromForm = (entries || []).map((entry) => toDailyItemFromEntry(entry, periodId))
+  const have = new Set(fromForm.map((item) => item.id).filter(Boolean))
+  const extras = (officeItems || [])
+    .filter((item) => item.origin === 'opcr' && !have.has(item.id))
+    .map(toDailyItemFromOffice)
+
+  if (!fromForm.length) {
+    return orderCoreFunctionItems(officeItems || []).map(toDailyItemFromOffice)
+  }
+
+  return [...fromForm, ...extras].sort(
+    (a, b) =>
+      (Number(a.section) || 1) - (Number(b.section) || 1) ||
+      (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+      String(a.output || '').localeCompare(String(b.output || '')),
+  )
 }
 
 export function logsForDate(logs, workDate) {

@@ -535,7 +535,7 @@ export default function MyOpcr() {
         'My OPCR',
         period?.title || String(period?.year || year || ''),
       )
-      showToast('OPCR saved.')
+      showToast('OPCR saved. The tally board now matches these rows.')
     } catch (err) {
       setError(err.message)
       showToast(err.message || 'Could not save OPCR.', 'danger')

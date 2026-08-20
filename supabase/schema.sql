@@ -49,8 +49,18 @@ create table if not exists public.opcr_items (
   category text not null default 'Core Functions',
   output text not null,
   success_indicator text not null,
-  sort_order integer not null default 0
+  sort_order integer not null default 0,
+  origin text not null default 'office'
 );
+
+alter table public.opcr_items
+  add column if not exists origin text not null default 'office';
+
+alter table public.opcr_items
+  drop constraint if exists opcr_items_origin_check;
+
+alter table public.opcr_items
+  add constraint opcr_items_origin_check check (origin in ('office', 'opcr'));
 
 create table if not exists public.opcr_forms (
   id uuid primary key default gen_random_uuid(),
@@ -310,6 +320,44 @@ create trigger protect_entry_columns
   before update on public.opcr_entries
   for each row execute procedure public.protect_entry_columns();
 
+create or replace function public.delete_unused_opcr_item(p_item_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+
+  if p_item_id is null then
+    return;
+  end if;
+
+  if not exists (
+    select 1
+    from public.opcr_items
+    where id = p_item_id
+      and origin = 'opcr'
+  ) then
+    return;
+  end if;
+
+  if exists (
+    select 1
+    from public.opcr_entries
+    where item_id = p_item_id
+  ) then
+    return;
+  end if;
+
+  delete from public.opcr_items
+  where id = p_item_id
+    and origin = 'opcr';
+end;
+$$;
+
 alter table public.profiles enable row level security;
 alter table public.opcr_periods enable row level security;
 alter table public.opcr_items enable row level security;
@@ -346,6 +394,25 @@ create policy "items_select"
   on public.opcr_items for select
   to authenticated
   using (true);
+
+drop policy if exists "items_insert" on public.opcr_items;
+create policy "items_insert"
+  on public.opcr_items for insert
+  to authenticated
+  with check (origin = 'opcr' or public.is_admin());
+
+drop policy if exists "items_update" on public.opcr_items;
+create policy "items_update"
+  on public.opcr_items for update
+  to authenticated
+  using (origin = 'opcr' or public.is_admin())
+  with check (origin = 'opcr' or public.is_admin());
+
+drop policy if exists "items_delete" on public.opcr_items;
+create policy "items_delete"
+  on public.opcr_items for delete
+  to authenticated
+  using (origin = 'opcr' or public.is_admin());
 
 drop policy if exists "forms_select" on public.opcr_forms;
 create policy "forms_select"
@@ -548,18 +615,20 @@ grant usage on schema public to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.office_staff to authenticated;
 grant select on public.opcr_periods to authenticated;
-grant select on public.opcr_items to authenticated;
+grant select, insert, update, delete on public.opcr_items to authenticated;
 grant select, insert, update on public.opcr_forms to authenticated;
 grant select, insert, update, delete on public.opcr_entries to authenticated;
 grant select, insert, update on public.opcr_tallies to authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.my_staff_id() to authenticated;
+grant execute on function public.delete_unused_opcr_item(uuid) to authenticated;
 
 -- After the first admin exists, run supabase/admin_users.sql and supabase/staffs.sql
 -- so the Users page lists real login accounts as Staffs.
 -- Existing projects: also run supabase/audit.sql once for the Audit logs page.
 -- Existing projects: run supabase/opcr_editable.sql so staff can edit OPCR rows.
 -- Existing projects: run supabase/daily.sql for the Daily log page.
+-- Existing projects: run supabase/opcr_tally_sync.sql so OPCR add/remove rows update the tally.
 
 alter table public.opcr_tallies replica identity full;
 

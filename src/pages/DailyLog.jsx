@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
@@ -29,6 +30,7 @@ export default function DailyLog() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [expandedDays, setExpandedDays] = useState({})
 
   async function load() {
     if (!supabase || !user) {
@@ -75,6 +77,7 @@ export default function DailyLog() {
     setNotes(nextNotes)
   }, [logs, workDate, items])
 
+  const pendingRows = items.filter((item) => item.pending)
   const grouped = useMemo(() => {
     const groups = []
     for (const item of items) {
@@ -98,13 +101,15 @@ export default function DailyLog() {
     setError('')
     clearToast()
     try {
-      const rows = items.map((item) => ({
-        item_id: item.id,
-        quantity: quantities[item.id],
-        notes: notes[item.id],
-        log_id: logByItem[item.id]?.id,
-        keep: Boolean(logByItem[item.id]),
-      }))
+      const rows = items
+        .filter((item) => item.id && !item.pending)
+        .map((item) => ({
+          item_id: item.id,
+          quantity: quantities[item.id],
+          notes: notes[item.id],
+          log_id: logByItem[item.id]?.id,
+          keep: Boolean(logByItem[item.id]),
+        }))
       await saveDailyLogs(supabase, {
         periodId: period.id,
         staffId: staff.id,
@@ -134,14 +139,14 @@ export default function DailyLog() {
   const dayLabel = formatWorkDate(workDate)
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-8">
       <PageHeader
         kicker={period?.office_name || 'E-Learning Ville'}
         title="Daily accomplishments"
-        description="Choose a date, type how many you finished for each core function, then save. The tally board keeps a running total for the semester."
+        description="Choose a date, type how many you finished for each core function, then save. Rows follow My OPCR — added or removed lines show here after you save the form."
       />
 
-      <section className="card p-5">
+      <section className="card sticky top-[4.75rem] z-10 p-5 shadow-md">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="flex min-w-0 flex-wrap items-end gap-x-6 gap-y-3">
             <div className="w-52 shrink-0">
@@ -194,6 +199,15 @@ export default function DailyLog() {
         </Alert>
       )}
 
+      {pendingRows.length > 0 && (
+        <Alert tone="warning">
+          {pendingRows.length === 1 ? 'One OPCR row is' : `${pendingRows.length} OPCR rows are`} not
+          linked to the tally yet. Open <strong>My OPCR</strong>, click Save, after running{' '}
+          <strong>supabase/opcr_tally_sync.sql</strong>. Then this page can take counts for those
+          rows.
+        </Alert>
+      )}
+
       {grouped.map((group) => (
         <section key={group.category} className="card overflow-hidden">
           <div className="border-b border-amber-200 bg-amber-100 px-5 py-2.5">
@@ -218,13 +232,19 @@ export default function DailyLog() {
               </thead>
               <tbody>
                 {group.items.map((item) => {
+                  const itemKey = item.id || item.entry_id
                   const total = semesterTotal(logs, item.id, workDate)
                   const typed = toCount(quantities[item.id])
                   const shownTotal = total - toCount(logByItem[item.id]?.quantity) + typed
                   return (
-                    <tr key={item.id} className="border-t border-slate-100">
+                    <tr key={itemKey} className="border-t border-slate-100">
                       <td className="px-5 py-3 align-middle font-semibold text-slate-900">
-                        {coreFunctionLabel(item.output)}
+                        {coreFunctionLabel(item.output) || 'New row'}
+                        {item.pending && (
+                          <span className="mt-1 block text-xs font-medium text-amber-700">
+                            Save My OPCR to enable counting
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 align-middle">
                         <div className="mx-auto w-28">
@@ -232,14 +252,15 @@ export default function DailyLog() {
                             type="number"
                             min="0"
                             step="0.1"
-                            disabled={!staff}
-                            value={quantities[item.id] ?? ''}
-                            onChange={(event) =>
+                            disabled={!staff || item.pending}
+                            value={item.id ? (quantities[item.id] ?? '') : ''}
+                            onChange={(event) => {
+                              if (!item.id) return
                               setQuantities((current) => ({
                                 ...current,
                                 [item.id]: event.target.value,
                               }))
-                            }
+                            }}
                             className="field h-11 px-2 text-center text-base font-bold"
                             placeholder="0"
                             aria-label={`${coreFunctionLabel(item.output)} count for ${dayLabel}`}
@@ -253,11 +274,12 @@ export default function DailyLog() {
                       </td>
                       <td className="px-5 py-3 align-middle">
                         <input
-                          disabled={!staff}
-                          value={notes[item.id] ?? ''}
-                          onChange={(event) =>
+                          disabled={!staff || item.pending}
+                          value={item.id ? (notes[item.id] ?? '') : ''}
+                          onChange={(event) => {
+                            if (!item.id) return
                             setNotes((current) => ({ ...current, [item.id]: event.target.value }))
-                          }
+                          }}
                           className="field h-11"
                           placeholder="Optional note"
                         />
@@ -274,7 +296,10 @@ export default function DailyLog() {
       <section className="card overflow-hidden">
         <div className="border-b border-slate-100 px-5 py-3">
           <h2 className="text-sm font-bold text-slate-900">Recent days</h2>
-          <p className="mt-0.5 text-xs text-slate-500">Click a day to open it and edit the counts.</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Click a day to expand its counts. Click again to collapse. That day also opens above so you
+            can edit it.
+          </p>
         </div>
         {history.length === 0 ? (
           <p className="px-5 py-6 text-sm text-slate-500">
@@ -282,37 +307,66 @@ export default function DailyLog() {
           </p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {history.map((day) => (
-              <button
-                key={day.date}
-                type="button"
-                onClick={() => setWorkDate(day.date)}
-                className={`flex w-full items-center justify-between gap-4 px-5 py-3.5 text-left hover:bg-slate-50 ${
-                  day.date === workDate ? 'bg-teal-50' : ''
-                }`}
-              >
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">{formatWorkDate(day.date)}</p>
-                  <p className="mt-1 truncate text-sm text-slate-600">
-                    {day.rows.map((row) => `${row.label} ${row.display}`).join(' · ') || 'No counts'}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm font-bold text-teal-800">
-                  {formatCount(day.total)}
-                </p>
-              </button>
-            ))}
+            {history.map((day) => {
+              const expanded = Boolean(expandedDays[day.date])
+              const countLabel = day.rows.length === 1 ? '1 item' : `${day.rows.length} items`
+              return (
+                <button
+                  key={day.date}
+                  type="button"
+                  onClick={() => {
+                    setWorkDate(day.date)
+                    setExpandedDays((current) => ({
+                      ...current,
+                      [day.date]: !current[day.date],
+                    }))
+                  }}
+                  className={`w-full px-5 py-3.5 text-left hover:bg-slate-50 ${
+                    day.date === workDate ? 'bg-teal-50' : ''
+                  }`}
+                  aria-expanded={expanded}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">{formatWorkDate(day.date)}</p>
+                      {!expanded && (
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {day.rows.length ? countLabel : 'No counts'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <p className="text-sm font-bold text-teal-800">{formatCount(day.total)}</p>
+                      <ChevronDown
+                        size={18}
+                        className={`text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                      />
+                    </div>
+                  </div>
+                  {expanded && (
+                    <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                      {day.rows.length === 0 ? (
+                        <li className="text-sm text-slate-500">No counts</li>
+                      ) : (
+                        day.rows.map((row) => (
+                          <li
+                            key={`${day.date}-${row.item_id || row.label}`}
+                            className="flex items-start justify-between gap-4 text-sm"
+                          >
+                            <span className="min-w-0 text-slate-700">{row.label}</span>
+                            <span className="shrink-0 font-semibold text-slate-900">{row.display}</span>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
       </section>
 
-      {staff && (
-        <div className="sticky bottom-4 z-10 flex justify-end">
-          <Button disabled={saving} onClick={save} className="h-11 min-w-[8.5rem] shadow-lg">
-            {saving ? 'Saving…' : 'Save day'}
-          </Button>
-        </div>
-      )}
       <Toast message={toast} phase={toastPhase} />
     </div>
   )

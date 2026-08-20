@@ -255,7 +255,7 @@ Notes: ________________________________
 Run `supabase/daily.sql` in the SQL editor once before this section.
 
 **L1.** Open Daily log from the sidebar.  
-Expected: Core functions with today’s date, count, semester total, and notes.  
+Expected: The same core functions as My OPCR (including any rows you added), with today’s date, count, semester total, and notes.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
@@ -308,23 +308,33 @@ Expected: Text is still there.
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
-**G5a.** Click Edit, change an Output or Success Indicator, Save, refresh.  
-Expected: The new text is still there. Tally board names do not change.  
+**G5a.** Click Edit, change an Output or Success Indicator on an original office row, Save, refresh.  
+Expected: The new text is still there on My OPCR. Tally board names for original office rows do not change.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
 **G5b.** Click Edit, Add row on a section, fill Output and Success Indicator, Save, refresh.  
-Expected: The new row is still there.  
+Expected: The new row is still there on My OPCR.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
-**G5c.** Click Edit, Remove row, Save, refresh.  
-Expected: That row is gone from this person’s OPCR only.  
+**G5c.** Click Edit, Remove an original office row, Save, refresh.  
+Expected: That row is gone from this person’s OPCR. The original tally row stays for the office.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 
 **G5d.** Click Edit, drag a row handle to another row or section, Save, refresh.  
 Expected: The row stays in the new position / section.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G5e.** Add a new OPCR row, Save, open Tally board and Daily log.  
+Expected: The new core function appears on both. Run `supabase/opcr_tally_sync.sql` first if it does not.  
+☐ Pass    ☐ Fail  
+Notes: ________________________________
+
+**G5f.** Remove that added row, Save, open Tally board and Daily log.  
+Expected: The added row is gone from the tally and from Daily log.  
 ☐ Pass    ☐ Fail  
 Notes: ________________________________
 

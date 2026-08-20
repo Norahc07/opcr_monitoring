@@ -155,6 +155,16 @@ export const SECTION4 = [
 
 export const CORE_FUNCTIONS = [...SECTION1, ...SECTION2, ...SECTION3, ...SECTION4]
 export const OPCR_SECTIONS = [SECTION1, SECTION2, SECTION3, SECTION4]
+export const OPCR_SECTION_TITLES = {
+  1: 'Core Function',
+  2: 'Support Function',
+  3: 'Admin and Finance Function',
+  4: 'Strategic Function',
+}
+
+export function sectionLabel(section) {
+  return OPCR_SECTION_TITLES[Number(section)] || OPCR_SECTION_TITLES[1]
+}
 
 export function sectionForOutput(output) {
   const name = String(output || '')
@@ -216,5 +226,16 @@ export function orderCoreFunctionItems(items) {
     )
     if (index >= 0) ordered.push(remaining.splice(index, 1)[0])
   }
-  return ordered.length ? ordered : items || []
+  remaining.sort(
+    (a, b) =>
+      (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+      String(a.output || '').localeCompare(String(b.output || '')),
+  )
+  for (const item of remaining) {
+    const order = Number(item.sort_order) || 0
+    const insertAt = ordered.findIndex((row) => (Number(row.sort_order) || 0) > order)
+    if (insertAt < 0) ordered.push(item)
+    else ordered.splice(insertAt, 0, item)
+  }
+  return ordered
 }

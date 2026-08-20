@@ -185,6 +185,145 @@ function missingOpcrRowError(error) {
   return error
 }
 
+function missingTallySyncError(error) {
+  const message = error?.message || ''
+  if (
+    error?.code === 'PGRST202' ||
+    error?.code === 'PGRST204' ||
+    error?.code === '42703' ||
+    message.includes('origin') ||
+    message.includes('delete_unused_opcr_item') ||
+    message.includes('permission denied') ||
+    message.includes('opcr_items')
+  ) {
+    return new Error(
+      'Tally sync is not set up yet. Open Supabase → SQL Editor → run supabase/opcr_tally_sync.sql, then save again.',
+    )
+  }
+  return error
+}
+
+function interpolateSort(prev, next) {
+  if (prev != null && next != null && next > prev + 1) return Math.floor((prev + next) / 2)
+  if (prev != null && next != null) return prev + 1
+  if (prev != null) return prev + 10
+  if (next != null) return Math.max(1, next - 1)
+  return 10
+}
+
+function customSortOrders(entries, itemMeta) {
+  const assigned = {}
+  for (const section of [1, 2, 3, 4]) {
+    const list = entries
+      .filter((entry) => Number(entry.section) === section)
+      .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+
+    for (let index = 0; index < list.length; index += 1) {
+      const entry = list[index]
+      const meta = entry.item_id ? itemMeta[entry.item_id] : null
+      const isCustom = !entry.item_id || meta?.origin === 'opcr'
+      if (!isCustom) continue
+
+      let prevSort = null
+      for (let look = index - 1; look >= 0; look -= 1) {
+        const sibling = list[look]
+        if (assigned[sibling.id] != null) {
+          prevSort = assigned[sibling.id]
+          break
+        }
+        const siblingMeta = sibling.item_id ? itemMeta[sibling.item_id] : null
+        if (siblingMeta && siblingMeta.origin !== 'opcr') {
+          prevSort = Number(siblingMeta.sort_order) || 0
+          break
+        }
+      }
+
+      let nextSort = null
+      for (let look = index + 1; look < list.length; look += 1) {
+        const sibling = list[look]
+        const siblingMeta = sibling.item_id ? itemMeta[sibling.item_id] : null
+        if (siblingMeta && siblingMeta.origin !== 'opcr') {
+          nextSort = Number(siblingMeta.sort_order) || 0
+          break
+        }
+      }
+
+      assigned[entry.id] = interpolateSort(prevSort, nextSort)
+    }
+  }
+  return assigned
+}
+
+async function loadItemMeta(supabase, itemIds) {
+  const ids = [...new Set((itemIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+  const { data, error } = await supabase
+    .from('opcr_items')
+    .select('id, origin, category, sort_order')
+    .in('id', ids)
+  if (error) throw missingTallySyncError(error)
+  return Object.fromEntries((data || []).map((row) => [row.id, row]))
+}
+
+async function syncOpcrItemsToTally(supabase, periodId, entries) {
+  const itemMeta = await loadItemMeta(
+    supabase,
+    entries.map((entry) => entry.item_id),
+  )
+  const sortByEntry = customSortOrders(entries, itemMeta)
+  const categoryBySection = {}
+  for (const entry of entries) {
+    const meta = entry.item_id ? itemMeta[entry.item_id] : null
+    const section = Number(entry.section) || 1
+    if (meta?.category && !categoryBySection[section]) categoryBySection[section] = meta.category
+  }
+
+  const linked = []
+  for (const entry of entries) {
+    const section = Number(entry.section) || 1
+    const category = categoryBySection[section] || 'Core Functions'
+    const output = String(entry.output || '').trim() || 'New row'
+    const success = String(entry.success_indicator || '').trim()
+    const sortOrder = sortByEntry[entry.id] ?? Number(entry.sort_order) || 0
+
+    if (!entry.item_id) {
+      const { data, error } = await supabase
+        .from('opcr_items')
+        .insert({
+          period_id: periodId,
+          category,
+          output,
+          success_indicator: success,
+          sort_order: sortOrder,
+          origin: 'opcr',
+        })
+        .select('id, origin, category, sort_order')
+        .single()
+      if (error) throw missingTallySyncError(error)
+      itemMeta[data.id] = data
+      if (!categoryBySection[section]) categoryBySection[section] = data.category
+      linked.push({ ...entry, item_id: data.id })
+      continue
+    }
+
+    const meta = itemMeta[entry.item_id]
+    if (meta?.origin === 'opcr') {
+      const { error } = await supabase
+        .from('opcr_items')
+        .update({
+          output,
+          success_indicator: success,
+          sort_order: sortOrder,
+          category,
+        })
+        .eq('id', entry.item_id)
+      if (error) throw missingTallySyncError(error)
+    }
+    linked.push(entry)
+  }
+  return linked
+}
+
 export async function ensureUserForm(supabase, userId, periodId) {
   const { data: existing, error: existingError } = await supabase
     .from('opcr_forms')
@@ -232,8 +371,9 @@ export async function ensureUserForm(supabase, userId, periodId) {
 
   if (entriesError) throw entriesError
 
-  if (!(entries || []).length && (items || []).length) {
-    const payload = items.map((item) => ({
+  const seedItems = (items || []).filter((item) => item.origin !== 'opcr')
+  if (!(entries || []).length && seedItems.length) {
+    const payload = seedItems.map((item) => ({
       form_id: form.id,
       item_id: item.id,
       output: item.output || '',
@@ -246,7 +386,7 @@ export async function ensureUserForm(supabase, userId, periodId) {
     const { error: insertError } = await supabase.from('opcr_entries').insert(payload)
     if (insertError) {
       const { error: fallbackError } = await supabase.from('opcr_entries').insert(
-        items.map((item) => ({
+        seedItems.map((item) => ({
           form_id: form.id,
           item_id: item.id,
           actual_accomplishment: '',
@@ -456,8 +596,24 @@ export async function saveFormSigner(supabase, formId, payload) {
 }
 
 export async function saveOpcrRows(supabase, formId, entries, removedIds = []) {
+  const { data: form, error: formError } = await supabase
+    .from('opcr_forms')
+    .select('id, period_id')
+    .eq('id', formId)
+    .single()
+  if (formError) throw formError
+
   const realRemoved = removedIds.filter((id) => id && !isTempEntryId(id))
+  let removedItemIds = []
   if (realRemoved.length) {
+    const { data: removedRows, error: lookupError } = await supabase
+      .from('opcr_entries')
+      .select('id, item_id')
+      .eq('form_id', formId)
+      .in('id', realRemoved)
+    if (lookupError) throw missingOpcrRowError(lookupError)
+    removedItemIds = (removedRows || []).map((row) => row.item_id).filter(Boolean)
+
     const { error: deleteError } = await supabase
       .from('opcr_entries')
       .delete()
@@ -466,8 +622,9 @@ export async function saveOpcrRows(supabase, formId, entries, removedIds = []) {
     if (deleteError) throw missingOpcrRowError(deleteError)
   }
 
-  const existing = entries.filter((entry) => !isTempEntryId(entry.id))
-  const created = entries.filter((entry) => isTempEntryId(entry.id))
+  const synced = await syncOpcrItemsToTally(supabase, form.period_id, entries)
+  const existing = synced.filter((entry) => !isTempEntryId(entry.id))
+  const created = synced.filter((entry) => isTempEntryId(entry.id))
 
   if (existing.length) {
     const results = await Promise.all(
@@ -475,6 +632,7 @@ export async function saveOpcrRows(supabase, formId, entries, removedIds = []) {
         supabase
           .from('opcr_entries')
           .update({
+            item_id: entry.item_id || null,
             output: entry.output || '',
             success_indicator: entry.success_indicator || '',
             section: Number(entry.section) || 1,
@@ -510,8 +668,17 @@ export async function saveOpcrRows(supabase, formId, entries, removedIds = []) {
     inserted = (data || []).map(hydrateOpcrEntry)
   }
 
+  for (const itemId of removedItemIds) {
+    const { error: unusedError } = await supabase.rpc('delete_unused_opcr_item', {
+      p_item_id: itemId,
+    })
+    if (unusedError) throw missingTallySyncError(unusedError)
+  }
+
+  clearBoardCache()
+
   const queue = [...inserted]
-  return entries
+  return synced
     .map((entry) => (isTempEntryId(entry.id) ? queue.shift() : hydrateOpcrEntry(entry)))
     .filter(Boolean)
 }
@@ -608,6 +775,7 @@ export function indexTallies(tallies) {
 }
 
 const BOARD_CACHE_KEY = 'opcr-tally-board'
+const MY_TALLY_CACHE_KEY = 'opcr-my-tally'
 
 export function buildBoardRows(people, items, tallies) {
   const indexed = indexTallies(tallies)
@@ -651,6 +819,15 @@ export function writeBoardCache(snapshot) {
   }
 }
 
+export function clearBoardCache() {
+  try {
+    sessionStorage.removeItem(BOARD_CACHE_KEY)
+    sessionStorage.removeItem(MY_TALLY_CACHE_KEY)
+  } catch {
+    // Ignore private-mode failures.
+  }
+}
+
 export function patchBoardCacheRow(tally) {
   const cached = readBoardCache()
   if (!cached?.period || cached.period.id !== tally.period_id) return cached
@@ -676,8 +853,6 @@ export function patchBoardCacheRow(tally) {
   writeBoardCache(cached)
   return cached
 }
-
-const MY_TALLY_CACHE_KEY = 'opcr-my-tally'
 
 export function readMyTallyCache(userId) {
   try {
