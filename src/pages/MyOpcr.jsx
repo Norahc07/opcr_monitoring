@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { GripVertical, Pencil, Plus, Printer, Trash2 } from 'lucide-react'
 import { Alert, Button, LoadingState, Toast, useToast } from '../components/ui'
 import { useAuth } from '../context/useAuth'
@@ -10,58 +10,141 @@ import {
   formatAverage,
   formatDateDisplay,
   getActivePeriod,
+  groupOpcrSectionEntries,
+  isPrimaryOpcrEntry,
   isTempEntryId,
   readApprovedCache,
   readClosingCache,
+  readHeaderCache,
+  readMyOpcrCache,
   saveOpcrRows,
   saveFormSigner,
   toDateValue,
   writeApprovedCache,
   writeClosingCache,
+  writeHeaderCache,
+  writeMyOpcrCache,
 } from '../lib/opcr'
+import { normalizeSection } from '../lib/coreFunctions'
+
+const DEFAULT_OPCR_HEADER_TITLE = 'Office Performance Commitment and Review (OPCR)'
+const DEFAULT_OPCR_HEADER_OFFICE =
+  'Office of the Municipal Mayor (Mauban eLearningVille) of the Local Government Unit of Mauban, Quezon'
+
+function defaultOpcrCommitmentLine(year) {
+  return `commit to deliver and agree to be rated on the attainment of the following targets in accordance with the indicated measures for the period of January to December ${year}.`
+}
+
+function defaultOpcrIntroLine(year) {
+  return `${DEFAULT_OPCR_HEADER_OFFICE}\n${defaultOpcrCommitmentLine(year)}`
+}
+
+function buildHeaderIntroLine(form, cached, year) {
+  if (cached?.introLine?.trim()) return cached.introLine.trim()
+  const office = form?.header_office_line?.trim() || cached?.officeLine?.trim() || ''
+  const commitment = form?.header_commitment_line?.trim() || cached?.commitmentLine?.trim() || ''
+  if (office && commitment) return `${office}\n${commitment}`
+  if (office) return office
+  if (commitment) return commitment
+  return defaultOpcrIntroLine(year)
+}
 
 const HEAD_OF_OFFICE = 'HON. BAUTISTA ERWIN DWIGHT C. PASTRANA'
 const HEAD_OF_OFFICE_TITLE = 'Municipal Mayor'
 const ASSESSOR_NAME = 'CONCHITA MARTA B. MIRABUENO'
 const ASSESSOR_TITLE = 'MGDH1-Center Manager'
 
+const OPCR_RATING_SCALE = [
+  { level: 'Outstanding', range: '130% and above', rating: '5' },
+  { level: 'Very Satisfactory', range: '115-129%', rating: '4' },
+  { level: 'Satisfactory', range: '90-114%', rating: '3' },
+  { level: 'Unsatisfactory', range: '51-89%', rating: '2' },
+  { level: 'Poor', range: '50% and below', rating: '1' },
+]
+
+function OpcrRatingScale() {
+  return (
+    <table className="opcr-rating-scale">
+      <colgroup>
+        <col className="opcr-rating-scale-col-level" />
+        <col className="opcr-rating-scale-col-range" />
+        <col className="opcr-rating-scale-col-score" />
+      </colgroup>
+      <tbody>
+        {OPCR_RATING_SCALE.map((row) => (
+          <tr key={row.level}>
+            <td className="opcr-rating-scale-level">{row.level}</td>
+            <td className="opcr-rating-scale-range">{row.range}</td>
+            <td className="opcr-rating-scale-score">{row.rating}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 function sortSection(entries, section) {
   return entries
-    .filter((entry) => Number(entry.section) === section)
+    .filter((entry) => normalizeSection(entry.section) === section)
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
 }
 
 function reorderEntries(entries, draggedId, toSection, beforeId) {
   const moving = entries.find((entry) => entry.id === draggedId)
-  if (!moving) return entries
+  if (!moving || !isPrimaryOpcrEntry(moving)) return entries
 
-  const others = entries.filter((entry) => entry.id !== draggedId)
+  const groupIds = new Set([
+    moving.id,
+    ...entries.filter((entry) => entry.parent_entry_id === moving.id).map((entry) => entry.id),
+  ])
+  const groupEntries = entries
+    .filter((entry) => groupIds.has(entry.id))
+    .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+  const others = entries.filter((entry) => !groupIds.has(entry.id))
+  const targetSection = normalizeSection(toSection)
   const next = []
 
-  for (const section of [1, 2, 3, 4]) {
-    const list = others
-      .filter((entry) => Number(entry.section) === section)
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  for (const section of [1, 2]) {
+    let primaries = others
+      .filter((entry) => normalizeSection(entry.section) === section && isPrimaryOpcrEntry(entry))
+      .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
 
-    if (section === Number(toSection)) {
-      let insertAt = beforeId ? list.findIndex((entry) => entry.id === beforeId) : -1
-      if (insertAt < 0) insertAt = list.length
-      list.splice(insertAt, 0, { ...moving, section: Number(toSection) })
+    if (section === targetSection) {
+      let insertAt = beforeId ? primaries.findIndex((entry) => entry.id === beforeId) : -1
+      if (insertAt < 0) insertAt = primaries.length
+      primaries = [...primaries.slice(0, insertAt), moving, ...primaries.slice(insertAt)]
     }
 
-    list.forEach((entry, index) => {
-      next.push({ ...entry, section, sort_order: (index + 1) * 10 })
+    primaries.forEach((primary, index) => {
+      const baseOrder = (index + 1) * 10
+      const lines =
+        primary.id === moving.id
+          ? groupEntries
+          : others
+              .filter((entry) => entry.id === primary.id || entry.parent_entry_id === primary.id)
+              .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+
+      lines.forEach((entry, lineIndex) => {
+        next.push({
+          ...entry,
+          section,
+          sort_order: baseOrder + lineIndex,
+        })
+      })
     })
   }
 
   return next
 }
 
+const OPCR_TABLE_COLS = 9
+
 function OpcrColGroup() {
   return (
     <colgroup>
       <col className="opcr-col-output" />
       <col className="opcr-col-success" />
+      <col className="opcr-col-accountable" />
       <col className="opcr-col-actual" />
       <col className="opcr-col-rating" />
       <col className="opcr-col-rating" />
@@ -78,10 +161,12 @@ function OpcrColumnHeads({ className = '' }) {
       <tr>
         <th rowSpan={2}>Output</th>
         <th rowSpan={2}>
-          Success Indicator
-          <span className="mt-0.5 block text-[10px] font-medium tracking-normal normal-case">
-            (Target + Measures)
-          </span>
+          Success Indicator{' '}
+          <span className="opcr-head-note">(Target + Measures)</span>
+        </th>
+        <th rowSpan={2}>
+          Divisions/Individuals{' '}
+          <span className="opcr-head-note">Accountable</span>
         </th>
         <th rowSpan={2}>Actual Accomplishments</th>
         <th colSpan={4}>Rating</th>
@@ -107,100 +192,55 @@ function OpcrFunctionsTable({ headClassName = '', children }) {
   )
 }
 
-function OpcrItemRows({
-  entries,
-  section,
+function OpcrLineCells({
+  entry,
   locked,
   editing,
-  gripId,
-  dragId,
-  dropId,
   onUpdate,
-  onRemove,
-  onGrip,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
+  onRemoveIndicator,
+  accountableEntry,
+  accountableRowSpan,
 }) {
-  const canDrag = editing && !locked
-  return entries.map((entry) => (
-    <tr
-      key={entry.id}
-      draggable={canDrag && gripId === entry.id}
-      className={
-        dragId === entry.id
-          ? 'opcr-row-dragging'
-          : dropId === entry.id
-            ? 'opcr-row-drop'
-            : undefined
-      }
-      onDragStart={(event) => {
-        if (!canDrag || gripId !== entry.id) {
-          event.preventDefault()
-          return
-        }
-        event.dataTransfer.setData('text/plain', String(entry.id))
-        event.dataTransfer.effectAllowed = 'move'
-        onDragStart(entry.id)
-      }}
-      onDragOver={(event) => {
-        if (!canDrag || !dragId || dragId === entry.id) return
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-        onDragOver(entry.id)
-      }}
-      onDrop={(event) => {
-        event.preventDefault()
-        const id = event.dataTransfer.getData('text/plain') || dragId
-        onDrop(id, section, entry.id)
-      }}
-      onDragEnd={onDragEnd}
-    >
-      <td className="align-top font-bold text-slate-900">
-        {canDrag ? (
-          <div className="space-y-2">
-            <div className="flex items-start gap-2">
-              <span
-                className="opcr-drag-handle print-hide mt-1"
-                title="Drag to move this row"
-                aria-label="Drag row"
-                onMouseDown={() => onGrip(entry.id)}
-              >
-                <GripVertical size={16} />
-              </span>
-              <textarea
-                value={entry.output || ''}
-                onChange={(event) => onUpdate(entry.id, 'output', event.target.value)}
-                className="field min-h-16 flex-1 font-bold"
-                placeholder="Output"
-              />
-            </div>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 print-hide hover:text-rose-800"
-              onClick={() => onRemove(entry.id)}
-            >
-              <Trash2 size={12} />
-              Remove row
-            </button>
-          </div>
-        ) : (
-          <p className="whitespace-pre-wrap">{entry.output || ''}</p>
-        )}
-      </td>
+  return (
+    <>
       <td className="align-top leading-6 text-slate-700">
         {editing && !locked ? (
-          <textarea
-            value={entry.success_indicator || ''}
-            onChange={(event) => onUpdate(entry.id, 'success_indicator', event.target.value)}
-            className="field min-h-16"
-            placeholder="Success indicator (target + measures)"
-          />
+          <div className="space-y-2">
+            <textarea
+              value={entry.success_indicator || ''}
+              onChange={(event) => onUpdate(entry.id, 'success_indicator', event.target.value)}
+              className="field min-h-16"
+              placeholder="Success indicator (target + measures)"
+            />
+            {!isPrimaryOpcrEntry(entry) && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 print-hide hover:text-rose-800"
+                onClick={() => onRemoveIndicator(entry.id)}
+              >
+                <Trash2 size={12} />
+                Remove indicator
+              </button>
+            )}
+          </div>
         ) : (
           <p className="whitespace-pre-wrap">{entry.success_indicator || ''}</p>
         )}
       </td>
+      {accountableEntry ? (
+        <td rowSpan={accountableRowSpan} className="align-top leading-6 text-slate-700">
+          {editing && !locked ? (
+            <textarea
+              value={accountableEntry.accountable || ''}
+              onChange={(event) => onUpdate(accountableEntry.id, 'accountable', event.target.value)}
+              className="field min-h-16"
+              placeholder="Division or person accountable"
+            />
+          ) : (
+            <p className="whitespace-pre-wrap">{accountableEntry.accountable || ''}</p>
+          )}
+        </td>
+      ) : null}
       <td>
         {editing && !locked ? (
           <textarea
@@ -230,8 +270,124 @@ function OpcrItemRows({
           <p className="min-h-16 whitespace-pre-wrap">{entry.remarks || ''}</p>
         )}
       </td>
-    </tr>
-  ))
+    </>
+  )
+}
+
+function OpcrFunctionGroups({
+  groups,
+  section,
+  locked,
+  editing,
+  gripId,
+  dragId,
+  dropId,
+  onUpdate,
+  onRemove,
+  onAddIndicator,
+  onGrip,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}) {
+  const canDrag = editing && !locked
+
+  return groups.flatMap(({ primary, lines }) =>
+    lines.map((entry, lineIndex) => {
+      const isPrimary = lineIndex === 0
+      const canDragGroup = canDrag && isPrimary
+      return (
+        <tr
+          key={entry.id}
+          draggable={canDragGroup && gripId === primary.id}
+          className={
+            dragId === primary.id && isPrimary
+              ? 'opcr-row-dragging'
+              : dropId === primary.id && isPrimary
+                ? 'opcr-row-drop'
+                : lineIndex > 0
+                  ? 'opcr-line-continued'
+                  : undefined
+          }
+          onDragStart={(event) => {
+            if (!canDragGroup || gripId !== primary.id) {
+              event.preventDefault()
+              return
+            }
+            event.dataTransfer.setData('text/plain', String(primary.id))
+            event.dataTransfer.effectAllowed = 'move'
+            onDragStart(primary.id)
+          }}
+          onDragOver={(event) => {
+            if (!canDragGroup || !dragId || dragId === primary.id || !isPrimary) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+            onDragOver(primary.id)
+          }}
+          onDrop={(event) => {
+            if (!isPrimary) return
+            event.preventDefault()
+            const id = event.dataTransfer.getData('text/plain') || dragId
+            onDrop(id, section, primary.id)
+          }}
+          onDragEnd={onDragEnd}
+        >
+          {isPrimary ? (
+            <td rowSpan={lines.length} className="align-top font-bold text-slate-900">
+              {canDragGroup ? (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span
+                      className="opcr-drag-handle print-hide mt-1"
+                      title="Drag to move this function"
+                      aria-label="Drag function"
+                      onMouseDown={() => onGrip(primary.id)}
+                    >
+                      <GripVertical size={16} />
+                    </span>
+                    <textarea
+                      value={primary.output || ''}
+                      onChange={(event) => onUpdate(primary.id, 'output', event.target.value)}
+                      className="field min-h-16 flex-1 font-bold"
+                      placeholder="Output"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 print-hide hover:text-teal-950"
+                    onClick={() => onAddIndicator(primary.id)}
+                  >
+                    <Plus size={12} />
+                    Add success indicator
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 print-hide hover:text-rose-800"
+                    onClick={() => onRemove(primary.id)}
+                  >
+                    <Trash2 size={12} />
+                    Remove function
+                  </button>
+                </div>
+              ) : (
+                <p className="whitespace-pre-wrap">{primary.output || ''}</p>
+              )}
+            </td>
+          ) : null}
+          <OpcrLineCells
+            entry={entry}
+            locked={locked}
+            editing={editing}
+            onUpdate={onUpdate}
+            onRemoveIndicator={onRemove}
+            accountableEntry={isPrimary ? primary : null}
+            accountableRowSpan={isPrimary ? lines.length : 0}
+          />
+        </tr>
+      )
+    }),
+  )
 }
 
 function AddOpcrRow({
@@ -260,7 +416,7 @@ function AddOpcrRow({
         onDrop(id, section, null)
       }}
     >
-      <td colSpan={8} className="bg-slate-50">
+      <td colSpan={OPCR_TABLE_COLS} className="bg-slate-50">
         <button
           type="button"
           onClick={onAdd}
@@ -302,6 +458,10 @@ export default function MyOpcr() {
   const [approvedDate, setApprovedDate] = useState('')
   const [staffName, setStaffName] = useState('')
   const [staffPosition, setStaffPosition] = useState('')
+  const [headerTitle, setHeaderTitle] = useState(DEFAULT_OPCR_HEADER_TITLE)
+  const [headerIntroLine, setHeaderIntroLine] = useState(() =>
+    defaultOpcrIntroLine(new Date().getFullYear()),
+  )
   const [comments, setComments] = useState('')
   const [assessedName, setAssessedName] = useState(ASSESSOR_NAME)
   const [assessedPosition, setAssessedPosition] = useState(ASSESSOR_TITLE)
@@ -317,24 +477,61 @@ export default function MyOpcr() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const editSnapshotRef = useRef(null)
+  const editingIdentityRef = useRef(false)
+
+  useEffect(() => {
+    editingIdentityRef.current = editingIdentity
+  }, [editingIdentity])
 
   const locked = form?.status === 'reviewed' || form?.status === 'finalized'
   const year = Math.max(Number(period?.year) || 0, new Date().getFullYear())
   const average = useMemo(() => calcFinalAverage(entries), [entries])
 
-  const section1Entries = useMemo(() => sortSection(entries, 1), [entries])
-  const section2Entries = useMemo(() => sortSection(entries, 2), [entries])
-  const section3Entries = useMemo(() => sortSection(entries, 3), [entries])
-  const section4Entries = useMemo(() => sortSection(entries, 4), [entries])
+  const section1Groups = useMemo(() => groupOpcrSectionEntries(entries, 1), [entries])
+  const section2Groups = useMemo(() => groupOpcrSectionEntries(entries, 2), [entries])
 
   useEffect(() => {
     let active = true
 
-    async function load() {
+    function applySnapshot(snapshot, { preserveEdit = false } = {}) {
+      if (!snapshot) return
+      setPeriod(snapshot.period || null)
+      setForm(snapshot.form || null)
+      setEntries(snapshot.entries || [])
+      setStaffName(snapshot.staffName || '')
+      setStaffPosition(snapshot.staffPosition || '')
+      setHeaderTitle(snapshot.headerTitle || DEFAULT_OPCR_HEADER_TITLE)
+      setHeaderIntroLine(
+        snapshot.headerIntroLine ||
+          defaultOpcrIntroLine(
+            Math.max(Number(snapshot.period?.year) || 0, new Date().getFullYear()),
+          ),
+      )
+      setApprovedName(snapshot.approvedName || HEAD_OF_OFFICE)
+      setApprovedPosition(snapshot.approvedPosition || HEAD_OF_OFFICE_TITLE)
+      setApprovedDate(snapshot.approvedDate || '')
+      setComments(snapshot.comments || '')
+      setAssessedName(snapshot.assessedName || ASSESSOR_NAME)
+      setAssessedPosition(snapshot.assessedPosition || ASSESSOR_TITLE)
+      setDiscussedDate(snapshot.discussedDate || '')
+      setAssessedDate(snapshot.assessedDate || '')
+      setFinalRaterName(snapshot.finalRaterName || '')
+      setFinalRatingDate(snapshot.finalRatingDate || '')
+      if (!preserveEdit) {
+        setRemovedIds([])
+        setEditingIdentity(false)
+        editSnapshotRef.current = null
+      }
+    }
+
+    async function load({ silent = false } = {}) {
       if (!supabase || !user) {
         setLoading(false)
         return
       }
+
+      if (!silent) setLoading(true)
 
       try {
         const activePeriod = await getActivePeriod(supabase)
@@ -348,35 +545,43 @@ export default function MyOpcr() {
 
         const bundle = await ensureUserForm(supabase, user.id, activePeriod.id)
         if (!active) return
-        const cached = readApprovedCache(bundle.form?.id)
+
+        const approvedCached = readApprovedCache(bundle.form?.id)
         const closing = readClosingCache(bundle.form?.id)
-        setPeriod(activePeriod)
-        setForm(bundle.form)
-        setEntries(bundle.entries || [])
-        setStaffName(bundle.form?.signer_name?.trim() || profile?.full_name || '')
-        setStaffPosition(bundle.form?.signer_position?.trim() || profile?.position || '')
-        setApprovedName(
-          bundle.form?.approved_name?.trim() || cached?.name || HEAD_OF_OFFICE,
-        )
-        setApprovedPosition(
-          bundle.form?.approved_position?.trim() || cached?.position || HEAD_OF_OFFICE_TITLE,
-        )
-        setApprovedDate(toDateValue(bundle.form?.approved_date) || toDateValue(cached?.date))
-        setComments(bundle.form?.comments || closing?.comments || '')
-        setAssessedName(bundle.form?.assessed_name?.trim() || closing?.assessedName || ASSESSOR_NAME)
-        setAssessedPosition(
-          bundle.form?.assessed_position?.trim() || closing?.assessedPosition || ASSESSOR_TITLE,
-        )
-        setDiscussedDate(
-          toDateValue(bundle.form?.discussed_date) || toDateValue(closing?.discussedDate),
-        )
-        setAssessedDate(
-          toDateValue(bundle.form?.assessed_date) || toDateValue(closing?.assessedDate),
-        )
-        setFinalRaterName(bundle.form?.final_rater_name || closing?.finalRaterName || '')
-        setFinalRatingDate(
-          toDateValue(bundle.form?.final_rating_date) || toDateValue(closing?.finalRatingDate),
-        )
+        const headerCached = readHeaderCache(bundle.form?.id)
+        const activeYear = Math.max(Number(activePeriod?.year) || 0, new Date().getFullYear())
+
+        const snapshot = {
+          userId: user.id,
+          period: activePeriod,
+          form: bundle.form,
+          entries: bundle.entries || [],
+          staffName: bundle.form?.signer_name?.trim() || profile?.full_name || '',
+          staffPosition: bundle.form?.signer_position?.trim() || profile?.position || '',
+          headerTitle:
+            bundle.form?.header_title?.trim() || headerCached?.title || DEFAULT_OPCR_HEADER_TITLE,
+          headerIntroLine: buildHeaderIntroLine(bundle.form, headerCached, activeYear),
+          approvedName: bundle.form?.approved_name?.trim() || approvedCached?.name || HEAD_OF_OFFICE,
+          approvedPosition:
+            bundle.form?.approved_position?.trim() ||
+            approvedCached?.position ||
+            HEAD_OF_OFFICE_TITLE,
+          approvedDate: toDateValue(bundle.form?.approved_date) || toDateValue(approvedCached?.date),
+          comments: bundle.form?.comments || closing?.comments || '',
+          assessedName: bundle.form?.assessed_name?.trim() || closing?.assessedName || ASSESSOR_NAME,
+          assessedPosition:
+            bundle.form?.assessed_position?.trim() || closing?.assessedPosition || ASSESSOR_TITLE,
+          discussedDate:
+            toDateValue(bundle.form?.discussed_date) || toDateValue(closing?.discussedDate),
+          assessedDate:
+            toDateValue(bundle.form?.assessed_date) || toDateValue(closing?.assessedDate),
+          finalRaterName: bundle.form?.final_rater_name || closing?.finalRaterName || '',
+          finalRatingDate:
+            toDateValue(bundle.form?.final_rating_date) || toDateValue(closing?.finalRatingDate),
+        }
+
+        applySnapshot(snapshot, { preserveEdit: editingIdentityRef.current })
+        writeMyOpcrCache(snapshot)
       } catch (err) {
         if (active) setError(err.message)
       } finally {
@@ -384,7 +589,15 @@ export default function MyOpcr() {
       }
     }
 
-    load()
+    const cached = readMyOpcrCache(user?.id)
+    if (cached) {
+      applySnapshot(cached)
+      setLoading(false)
+      load({ silent: true })
+    } else {
+      load({ silent: false })
+    }
+
     return () => {
       active = false
     }
@@ -413,6 +626,89 @@ export default function MyOpcr() {
       .eq('id', form.id)
   }
 
+  function captureEditSnapshot() {
+    return {
+      entries: JSON.parse(JSON.stringify(entries)),
+      removedIds: [...removedIds],
+      staffName,
+      staffPosition,
+      headerTitle,
+      headerIntroLine,
+      approvedName,
+      approvedPosition,
+      approvedDate,
+      comments,
+      assessedName,
+      assessedPosition,
+      discussedDate,
+      assessedDate,
+      finalRaterName,
+      finalRatingDate,
+    }
+  }
+
+  function enterEditMode() {
+    if (!editSnapshotRef.current) {
+      editSnapshotRef.current = captureEditSnapshot()
+    }
+    setEditingIdentity(true)
+  }
+
+  async function cancelEdit() {
+    const snap = editSnapshotRef.current
+    clearDrag()
+    setEditingIdentity(false)
+    editSnapshotRef.current = null
+    if (!snap) return
+
+    setEntries(snap.entries)
+    setRemovedIds(snap.removedIds)
+    setStaffName(snap.staffName)
+    setStaffPosition(snap.staffPosition)
+    setHeaderTitle(snap.headerTitle)
+    setHeaderIntroLine(snap.headerIntroLine)
+    setApprovedName(snap.approvedName)
+    setApprovedPosition(snap.approvedPosition)
+    setApprovedDate(snap.approvedDate)
+    setComments(snap.comments)
+    setAssessedName(snap.assessedName)
+    setAssessedPosition(snap.assessedPosition)
+    setDiscussedDate(snap.discussedDate)
+    setAssessedDate(snap.assessedDate)
+    setFinalRaterName(snap.finalRaterName)
+    setFinalRatingDate(snap.finalRatingDate)
+
+    if (!form?.id || !supabase) return
+
+    writeApprovedCache(form.id, {
+      name: snap.approvedName,
+      position: snap.approvedPosition,
+      date: snap.approvedDate,
+    })
+    writeClosingCache(form.id, {
+      comments: snap.comments,
+      assessedName: snap.assessedName,
+      assessedPosition: snap.assessedPosition,
+      discussedDate: snap.discussedDate,
+      assessedDate: snap.assessedDate,
+      finalRaterName: snap.finalRaterName,
+      finalRatingDate: snap.finalRatingDate,
+    })
+    writeHeaderCache(form.id, {
+      headerTitle: snap.headerTitle,
+      headerIntroLine: snap.headerIntroLine,
+    })
+
+    try {
+      await supabase
+        .from('opcr_forms')
+        .update({ approved_date: snap.approvedDate || null })
+        .eq('id', form.id)
+    } catch {
+      // Local state is already restored.
+    }
+  }
+
   function updateEntry(id, field, value) {
     if (!id) return
     setEntries((current) =>
@@ -422,10 +718,11 @@ export default function MyOpcr() {
 
   function addRow(section) {
     if (!form?.id || locked) return
-    const inSection = entries.filter((entry) => Number(entry.section) === section)
+    const targetSection = normalizeSection(section)
+    const inSection = entries.filter((entry) => normalizeSection(entry.section) === targetSection)
     const nextOrder =
       inSection.reduce((max, entry) => Math.max(max, Number(entry.sort_order) || 0), 0) + 10
-    setEditingIdentity(true)
+    enterEditMode()
     setEntries((current) => [
       ...current,
       {
@@ -434,7 +731,8 @@ export default function MyOpcr() {
         item_id: null,
         output: '',
         success_indicator: '',
-        section,
+        accountable: '',
+        section: targetSection,
         sort_order: nextOrder,
         actual_accomplishment: '',
         remarks: '',
@@ -442,11 +740,61 @@ export default function MyOpcr() {
     ])
   }
 
+  function addIndicatorLine(parentId) {
+    if (!form?.id || locked) return
+    const parent = entries.find((entry) => entry.id === parentId)
+    if (!parent || !isPrimaryOpcrEntry(parent)) return
+    const groupLines = entries.filter(
+      (entry) => entry.id === parentId || entry.parent_entry_id === parentId,
+    )
+    const nextOrder =
+      groupLines.reduce((max, entry) => Math.max(max, Number(entry.sort_order) || 0), 0) + 1
+    enterEditMode()
+    setEntries((current) => [
+      ...current,
+      {
+        id: `tmp-${crypto.randomUUID()}`,
+        form_id: form.id,
+        item_id: null,
+        parent_entry_id: parentId,
+        output: '',
+        success_indicator: '',
+        accountable: '',
+        section: normalizeSection(parent.section),
+        sort_order: nextOrder,
+        actual_accomplishment: '',
+        remarks: '',
+      },
+    ])
+  }
+
+  function clearAllFunctions() {
+    if (!form?.id || locked || !entries.length) return
+    const confirmed = window.confirm(
+      'Remove all Core and Support functions from your OPCR? After you click Save, matching rows and counts on the tally board and daily log are removed too.',
+    )
+    if (!confirmed) return
+
+    const persistedIds = entries.map((entry) => entry.id).filter((id) => !isTempEntryId(id))
+    setRemovedIds((current) => [...new Set([...current, ...persistedIds])])
+    setEntries([])
+    enterEditMode()
+  }
+
   function removeRow(id) {
     if (!id || locked) return
-    setEntries((current) => current.filter((entry) => entry.id !== id))
-    if (!isTempEntryId(id)) {
-      setRemovedIds((current) => (current.includes(id) ? current : [...current, id]))
+    const entry = entries.find((row) => row.id === id)
+    if (!entry) return
+
+    const idsToRemove = isPrimaryOpcrEntry(entry)
+      ? [id, ...entries.filter((row) => row.parent_entry_id === id).map((row) => row.id)]
+      : [id]
+
+    setEntries((current) => current.filter((row) => !idsToRemove.includes(row.id)))
+    for (const removeId of idsToRemove) {
+      if (!isTempEntryId(removeId)) {
+        setRemovedIds((current) => (current.includes(removeId) ? current : [...current, removeId]))
+      }
     }
   }
 
@@ -476,6 +824,8 @@ export default function MyOpcr() {
       const savedDate = await saveFormSigner(supabase, form.id, {
         name: staffName.trim(),
         position: staffPosition.trim(),
+        headerTitle: headerTitle.trim(),
+        headerIntroLine: headerIntroLine.trim(),
         approvedName: approvedName.trim(),
         approvedPosition: approvedPosition.trim(),
         approvedDate,
@@ -509,12 +859,19 @@ export default function MyOpcr() {
         finalRaterName: finalRaterName.trim(),
         finalRatingDate: nextFinalOn,
       })
+      writeHeaderCache(form.id, {
+        headerTitle: headerTitle.trim(),
+        headerIntroLine: headerIntroLine.trim(),
+      })
       setForm((current) =>
         current
           ? {
               ...current,
               signer_name: staffName.trim(),
               signer_position: staffPosition.trim(),
+              header_title: headerTitle.trim(),
+              header_office_line: headerIntroLine.trim(),
+              header_commitment_line: '',
               approved_name: approvedName.trim(),
               approved_position: approvedPosition.trim(),
               approved_date: nextDate || null,
@@ -529,13 +886,53 @@ export default function MyOpcr() {
           : current,
       )
       setEditingIdentity(false)
+      editSnapshotRef.current = null
+      if (user?.id) {
+        writeMyOpcrCache({
+          userId: user.id,
+          period,
+          form: {
+            ...form,
+            signer_name: staffName.trim(),
+            signer_position: staffPosition.trim(),
+            header_title: headerTitle.trim(),
+            header_office_line: headerIntroLine.trim(),
+            header_commitment_line: '',
+            approved_name: approvedName.trim(),
+            approved_position: approvedPosition.trim(),
+            approved_date: nextDate || null,
+            comments: comments.trim(),
+            assessed_name: assessedName.trim(),
+            assessed_position: assessedPosition.trim(),
+            discussed_date: nextDiscussed || null,
+            assessed_date: nextAssessedOn || null,
+            final_rater_name: finalRaterName.trim(),
+            final_rating_date: nextFinalOn || null,
+          },
+          entries: savedRows,
+          staffName: staffName.trim(),
+          staffPosition: staffPosition.trim(),
+          headerTitle: headerTitle.trim(),
+          headerIntroLine: headerIntroLine.trim(),
+          approvedName: approvedName.trim(),
+          approvedPosition: approvedPosition.trim(),
+          approvedDate: nextDate,
+          comments: comments.trim(),
+          assessedName: assessedName.trim(),
+          assessedPosition: assessedPosition.trim(),
+          discussedDate: nextDiscussed,
+          assessedDate: nextAssessedOn,
+          finalRaterName: finalRaterName.trim(),
+          finalRatingDate: nextFinalOn,
+        })
+      }
       await writeAudit(
         supabase,
         'Saved OPCR',
         'My OPCR',
         period?.title || String(period?.year || year || ''),
       )
-      showToast('OPCR saved. The tally board now matches these rows.')
+      showToast('OPCR saved. Tally board and daily log now match these rows.')
     } catch (err) {
       setError(err.message)
       showToast(err.message || 'Could not save OPCR.', 'danger')
@@ -559,6 +956,7 @@ export default function MyOpcr() {
     dropId,
     onUpdate: updateEntry,
     onRemove: removeRow,
+    onAddIndicator: addIndicatorLine,
     onGrip: setGripId,
     onDragStart: setDragId,
     onDragOver: setDropId,
@@ -584,39 +982,62 @@ export default function MyOpcr() {
           </Button>
           {!locked &&
             (editingIdentity ? (
-              <Button disabled={saving} onClick={persist}>
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
+              <>
+                <Button variant="secondary" disabled={saving || !entries.length} onClick={clearAllFunctions}>
+                  <Trash2 size={16} />
+                  Clear all
+                </Button>
+                <Button variant="ghost" disabled={saving} onClick={cancelEdit}>
+                  Cancel
+                </Button>
+                <Button disabled={saving} onClick={persist}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+              </>
             ) : (
-              <Button variant="secondary" onClick={() => setEditingIdentity(true)}>
+              <Button variant="secondary" onClick={enterEditMode}>
                 <Pencil size={16} />
                 Edit
               </Button>
             ))}
         </div>
         {editingIdentity && !locked && (
-          <p className="print-hide mb-3 pr-40 text-xs font-medium text-slate-500">
-            Drag the handle beside Output to move a row up or into another section, then Save.
+          <p className="print-hide mb-3 max-w-3xl pr-52 text-xs font-medium text-slate-500">
+            Click <strong>Edit</strong> to change the document title, office lines, signer, functions, and closing section. Save or Cancel when done.
+            Use <strong>Add success indicator</strong> for another target line under the same output.
+            Use <strong>Clear all</strong> to remove every function and reset tally/daily counts after Save.
           </p>
         )}
 
         <div className="opcr-sheet mt-0">
           <div className="opcr-print-page">
             <header className="opcr-print-header space-y-5">
-              <h1 className="px-20 text-center text-xl font-bold tracking-wide text-slate-900 uppercase sm:px-28 sm:text-2xl">
-                Office Performance Commitment and Review (OPCR)
-              </h1>
-              <p className="text-center text-sm leading-6 text-slate-600">
-                <span className="block">
-                  Office of the <strong>Municipal Mayor (Mauban eLearningVille)</strong> of the{' '}
-                  <strong>Local Government Unit of Mauban, Quezon</strong>
-                </span>
-                <span className="block">
-                  commit to deliver and agree to be rated on the attainment of the following targets in
-                  accordance with the indicated measures for the period of{' '}
-                  <strong>January to December {year}</strong>.
-                </span>
-              </p>
+              {editingIdentity && !locked ? (
+                <div className="opcr-header-fields space-y-3">
+                  <input
+                    className="opcr-header-title"
+                    value={headerTitle}
+                    onChange={(event) => setHeaderTitle(event.target.value)}
+                    placeholder="Document title"
+                  />
+                  <textarea
+                    className="opcr-header-line"
+                    rows={5}
+                    value={headerIntroLine}
+                    onChange={(event) => setHeaderIntroLine(event.target.value)}
+                    placeholder="Office and commitment lines"
+                  />
+                </div>
+              ) : (
+                <>
+                  <h1 className="px-20 text-center text-xl font-bold tracking-wide text-slate-900 uppercase sm:px-28 sm:text-2xl">
+                    {headerTitle}
+                  </h1>
+                  <p className="whitespace-pre-line text-center text-sm leading-6 text-slate-600">
+                    {headerIntroLine}
+                  </p>
+                </>
+              )}
               {editingIdentity && !locked ? (
                 <div className="opcr-signer">
                   <input
@@ -646,43 +1067,42 @@ export default function MyOpcr() {
 
             <table className="opcr-approved mt-6">
               <colgroup>
-                <col style={{ width: '42%' }} />
-                <col style={{ width: '2%' }} />
-                <col style={{ width: '41%' }} />
+                <col style={{ width: '85%' }} />
                 <col style={{ width: '15%' }} />
               </colgroup>
               <tbody>
                 <tr>
-                  <td colSpan={3} className="opcr-approved-label">
-                    Approved by:
-                  </td>
+                  <td className="opcr-approved-label">Approved by:</td>
                   <td className="opcr-approved-label">Date</td>
                 </tr>
                 <tr>
-                  <td colSpan={3} className="opcr-approved-sign">
-                    {editingIdentity && !locked ? (
-                      <div className="space-y-1">
-                        <input
-                          className="opcr-approved-name"
-                          value={approvedName}
-                          onChange={(event) => setApprovedName(event.target.value)}
-                          placeholder="Name"
-                        />
-                        <input
-                          className="opcr-approved-position"
-                          value={approvedPosition}
-                          onChange={(event) => setApprovedPosition(event.target.value)}
-                          placeholder="Position"
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <p className="opcr-approved-name">{approvedName}</p>
-                        {approvedPosition ? (
-                          <p className="opcr-approved-position">{approvedPosition}</p>
-                        ) : null}
-                      </>
-                    )}
+                  <td className="opcr-approved-sign">
+                    <div className="opcr-approved-signatory">
+                      {editingIdentity && !locked ? (
+                        <div className="space-y-1">
+                          <input
+                            className="opcr-approved-name"
+                            value={approvedName}
+                            onChange={(event) => setApprovedName(event.target.value)}
+                            placeholder="Name"
+                          />
+                          <input
+                            className="opcr-approved-position"
+                            value={approvedPosition}
+                            onChange={(event) => setApprovedPosition(event.target.value)}
+                            placeholder="Position"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <p className="opcr-approved-name">{approvedName}</p>
+                          {approvedPosition ? (
+                            <p className="opcr-approved-position">{approvedPosition}</p>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                    <OpcrRatingScale />
                   </td>
                   <td className="opcr-approved-date">
                     {editingIdentity && !locked ? (
@@ -698,21 +1118,15 @@ export default function MyOpcr() {
                     )}
                   </td>
                 </tr>
-                <tr>
-                  <td className="opcr-approved-role">Immediate Supervisor</td>
-                  <td />
-                  <td className="opcr-approved-role">Head of Office</td>
-                  <td />
-                </tr>
               </tbody>
             </table>
             <div className="opcr-print-fill">
               <OpcrFunctionsTable>
                   <tr className="opcr-section">
-                    <td colSpan={8}>Core Function:</td>
+                    <td colSpan={OPCR_TABLE_COLS}>Core Functions: 80%</td>
                   </tr>
-                  <OpcrItemRows
-                    entries={section1Entries}
+                  <OpcrFunctionGroups
+                    groups={section1Groups}
                     section={1}
                     {...rowDrag}
                   />
@@ -733,8 +1147,11 @@ export default function MyOpcr() {
           <div className="opcr-print-page">
             <div className="opcr-print-fill">
               <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                  <OpcrItemRows
-                    entries={section2Entries}
+                  <tr className="opcr-section">
+                    <td colSpan={OPCR_TABLE_COLS}>Support Function: 20%</td>
+                  </tr>
+                  <OpcrFunctionGroups
+                    groups={section2Groups}
                     section={2}
                     {...rowDrag}
                   />
@@ -754,55 +1171,11 @@ export default function MyOpcr() {
 
           <div className="opcr-print-page">
             <div className="opcr-print-fill">
-              <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                  <OpcrItemRows
-                    entries={section3Entries}
-                    section={3}
-                    {...rowDrag}
-                  />
-                  <AddOpcrRow
-                    editing={editingIdentity}
-                    locked={locked}
-                    section={3}
-                    dragId={dragId}
-                    dropId={dropId}
-                    onAdd={() => addRow(3)}
-                    onDragOver={setDropId}
-                    onDrop={moveRow}
-                  />
-              </OpcrFunctionsTable>
-            </div>
-          </div>
-
-          <div className="opcr-print-page">
-            <div className="opcr-print-fill">
-              <OpcrFunctionsTable headClassName="opcr-repeat-head">
-                  <OpcrItemRows
-                    entries={section4Entries}
-                    section={4}
-                    {...rowDrag}
-                  />
-                  <AddOpcrRow
-                    editing={editingIdentity}
-                    locked={locked}
-                    section={4}
-                    dragId={dragId}
-                    dropId={dropId}
-                    onAdd={() => addRow(4)}
-                    onDragOver={setDropId}
-                    onDrop={moveRow}
-                  />
-              </OpcrFunctionsTable>
-            </div>
-          </div>
-
-          <div className="opcr-print-page">
-            <div className="opcr-print-fill">
             <table className="opcr-functions">
               <OpcrColGroup />
               <tbody>
                 <tr className="opcr-average">
-                  <td colSpan={3}>Final Average Rating</td>
+                  <td colSpan={4}>Final Average Rating</td>
                   <td className="text-center" />
                   <td className="text-center" />
                   <td className="text-center" />
@@ -810,12 +1183,12 @@ export default function MyOpcr() {
                   <td />
                 </tr>
                 <tr>
-                  <td colSpan={8} className="font-bold">
+                  <td colSpan={OPCR_TABLE_COLS} className="font-bold">
                     Comments and Recommendation for Development Purposes
                   </td>
                 </tr>
                 <tr className="opcr-comments-row">
-                  <td colSpan={8}>
+                  <td colSpan={OPCR_TABLE_COLS}>
                     {editingIdentity && !locked ? (
                       <textarea
                         className="field opcr-comments-box"

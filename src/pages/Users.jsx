@@ -142,13 +142,36 @@ export default function Users() {
           })
           .eq('id', form.user_id)
         if (saveError) throw saveError
+
+        if (form.password?.trim()) {
+          const { error: passwordError } = await supabase.rpc('admin_reset_password', {
+            p_user_id: form.user_id,
+            p_password: form.password,
+          })
+          if (passwordError) {
+            if (
+              passwordError.message?.includes('admin_reset_password') ||
+              passwordError.code === 'PGRST202'
+            ) {
+              throw new Error(
+                'Password reset is not set up yet. Run the latest supabase/staffs.sql in the SQL editor, then try again.',
+              )
+            }
+            throw passwordError
+          }
+        }
+
         await writeAudit(
           supabase,
-          'Updated staff',
+          form.password?.trim() ? 'Reset staff password' : 'Updated staff',
           'Users',
           `${form.full_name.trim() || 'Staff'} · ${form.role}`,
         )
-        showToast(`Updated ${form.full_name || 'staff'}.`)
+        showToast(
+          form.password?.trim()
+            ? `Password reset for ${form.full_name || form.email || 'staff'}.`
+            : `Updated ${form.full_name || 'staff'}.`,
+        )
       } else {
         const { error: createError } = await supabase.rpc('admin_create_login', {
           p_email: form.email.trim(),
@@ -219,7 +242,7 @@ export default function Users() {
       <PageHeader
         kicker="Accounts"
         title="Users"
-        description="Staffs with a real login appear here and as columns on the tally board, including admin."
+        description="Staff logins used on the tally board. Use a custom login email (not a real inbox) and reset passwords here when staff forget them."
         actions={
           <Button onClick={() => setModal({ ...emptyStaff })}>
             <Plus size={16} />
@@ -231,8 +254,9 @@ export default function Users() {
       {error && <Alert tone="danger">{error}</Alert>}
 
       <Alert>
-        Create the account in Supabase Authentication, then run <strong>supabase/staffs.sql</strong>{' '}
-        in the SQL editor — or add them here. Only people with a login are listed.
+        Login emails here are usernames only — they do not need to be real inboxes. Give each staff
+        their email and password on paper. If they forget a password, edit the staff and set a new
+        one. Staff can also change their own password in Profile after signing in.
       </Alert>
 
       <section className="card overflow-hidden">
@@ -333,17 +357,20 @@ export default function Users() {
           >
             {!editingId && (
               <>
-                <Field label="Email">
+                <Field label="Login email (username)">
                   <input
                     type="email"
                     required
                     className="field"
                     value={modal.email}
                     onChange={(event) => setModal({ ...modal, email: event.target.value })}
-                    placeholder="staff@example.com"
+                    placeholder="e.g. bal@opcr.local"
                   />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Can be a custom address — it does not need to receive email.
+                  </p>
                 </Field>
-                <Field label="Password">
+                <Field label="Starting password">
                   <input
                     type="text"
                     required
@@ -355,6 +382,21 @@ export default function Users() {
                   />
                 </Field>
               </>
+            )}
+            {editingId && (
+              <Field label="New password (optional)">
+                <input
+                  type="text"
+                  minLength={6}
+                  className="field"
+                  value={modal.password}
+                  onChange={(event) => setModal({ ...modal, password: event.target.value })}
+                  placeholder="Leave blank to keep current password"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Set a new password if this staff forgot theirs, then give it to them in person.
+                </p>
+              </Field>
             )}
             <Field label="Full name">
               <input

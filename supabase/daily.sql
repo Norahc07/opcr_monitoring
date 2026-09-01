@@ -6,11 +6,7 @@ returns text
 language sql
 immutable
 as $$
-  select case
-    when p_date is null then 'jan_june'
-    when extract(month from p_date) <= 6 then 'jan_june'
-    else 'july_dec'
-  end;
+  select 'jan_dec';
 $$;
 
 create table if not exists public.opcr_daily_logs (
@@ -56,8 +52,9 @@ begin
   from public.opcr_daily_logs
   where period_id = p_period_id
     and staff_id = p_staff_id
-    and item_id = p_item_id
-    and public.tally_semester(work_date) = p_semester;
+    and item_id = p_item_id;
+
+  perform set_config('opcr.internal_sync', 'on', true);
 
   insert into public.opcr_tallies (
     period_id, staff_id, user_id, item_id, semester, target, accomplished
@@ -67,7 +64,7 @@ begin
     p_staff_id,
     p_user_id,
     p_item_id,
-    p_semester,
+    'jan_dec',
     0,
     v_sum
   )
@@ -76,6 +73,12 @@ begin
     accomplished = excluded.accomplished,
     user_id = coalesce(public.opcr_tallies.user_id, excluded.user_id),
     updated_at = now();
+
+  perform set_config('opcr.internal_sync', 'off', true);
+exception
+  when others then
+    perform set_config('opcr.internal_sync', 'off', true);
+    raise;
 end;
 $$;
 
@@ -88,19 +91,23 @@ as $$
 begin
   if tg_op = 'DELETE' then
     perform public.apply_daily_sum(
-      old.period_id, old.staff_id, old.user_id, old.item_id, public.tally_semester(old.work_date)
+      old.period_id, old.staff_id, old.user_id, old.item_id, 'jan_dec'
     );
     return old;
   end if;
 
-  if tg_op = 'UPDATE' then
+  if tg_op = 'UPDATE' and (
+    old.quantity is distinct from new.quantity
+    or old.work_date is distinct from new.work_date
+    or old.item_id is distinct from new.item_id
+  ) then
     perform public.apply_daily_sum(
-      old.period_id, old.staff_id, old.user_id, old.item_id, public.tally_semester(old.work_date)
+      old.period_id, old.staff_id, old.user_id, old.item_id, 'jan_dec'
     );
   end if;
 
   perform public.apply_daily_sum(
-    new.period_id, new.staff_id, new.user_id, new.item_id, public.tally_semester(new.work_date)
+    new.period_id, new.staff_id, new.user_id, new.item_id, 'jan_dec'
   );
   return new;
 end;
@@ -117,13 +124,9 @@ language plpgsql
 as $$
 begin
   if not public.is_admin() then
-    new.staff_id := public.my_staff_id();
-    new.user_id := auth.uid();
-    if new.staff_id is null then
-      raise exception 'Your login is not linked to an office staff name. Ask an admin to add you on Users.';
+    if new.staff_id is distinct from public.my_staff_id() then
+      raise exception 'Staff can only edit their own daily logs';
     end if;
-  elsif new.user_id is null then
-    select user_id into new.user_id from public.office_staff where id = new.staff_id;
   end if;
   return new;
 end;
@@ -131,37 +134,36 @@ $$;
 
 drop trigger if exists protect_daily_logs on public.opcr_daily_logs;
 create trigger protect_daily_logs
-  before insert or update on public.opcr_daily_logs
+  before update on public.opcr_daily_logs
   for each row execute procedure public.protect_daily_logs();
 
 alter table public.opcr_daily_logs enable row level security;
 
-drop policy if exists "daily_select" on public.opcr_daily_logs;
-create policy "daily_select"
+drop policy if exists "daily_logs_select" on public.opcr_daily_logs;
+create policy "daily_logs_select"
   on public.opcr_daily_logs for select
   to authenticated
-  using (staff_id = public.my_staff_id() or user_id = auth.uid() or public.is_admin());
+  using (staff_id = public.my_staff_id() or public.is_admin());
 
-drop policy if exists "daily_insert" on public.opcr_daily_logs;
-create policy "daily_insert"
+drop policy if exists "daily_logs_insert" on public.opcr_daily_logs;
+create policy "daily_logs_insert"
   on public.opcr_daily_logs for insert
   to authenticated
   with check (staff_id = public.my_staff_id() or public.is_admin());
 
-drop policy if exists "daily_update" on public.opcr_daily_logs;
-create policy "daily_update"
+drop policy if exists "daily_logs_update" on public.opcr_daily_logs;
+create policy "daily_logs_update"
   on public.opcr_daily_logs for update
   to authenticated
   using (staff_id = public.my_staff_id() or public.is_admin())
   with check (staff_id = public.my_staff_id() or public.is_admin());
 
-drop policy if exists "daily_delete" on public.opcr_daily_logs;
-create policy "daily_delete"
+drop policy if exists "daily_logs_delete" on public.opcr_daily_logs;
+create policy "daily_logs_delete"
   on public.opcr_daily_logs for delete
   to authenticated
   using (staff_id = public.my_staff_id() or public.is_admin());
 
-revoke all on public.opcr_daily_logs from public, anon;
 grant select, insert, update, delete on public.opcr_daily_logs to authenticated;
 grant execute on function public.tally_semester(date) to authenticated;
 grant execute on function public.apply_daily_sum(uuid, uuid, uuid, uuid, text) to authenticated;

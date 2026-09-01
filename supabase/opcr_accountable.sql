@@ -1,0 +1,38 @@
+-- Add Divisions/Individuals Accountable column to My OPCR rows.
+-- Run once in the SQL editor. Safe to re-run.
+
+alter table public.opcr_entries
+  add column if not exists accountable text not null default '';
+
+create or replace function public.protect_entry_columns()
+returns trigger
+language plpgsql
+as $$
+declare
+  form_owner uuid;
+  form_status text;
+begin
+  select user_id, status into form_owner, form_status
+  from public.opcr_forms
+  where id = new.form_id;
+
+  if form_owner = auth.uid() or not public.is_admin() then
+    new.rating_q := old.rating_q;
+    new.rating_e := old.rating_e;
+    new.rating_t := old.rating_t;
+  end if;
+
+  if form_status in ('reviewed', 'finalized') and not public.is_admin() then
+    new.actual_accomplishment := old.actual_accomplishment;
+    new.remarks := old.remarks;
+    new.output := old.output;
+    new.success_indicator := old.success_indicator;
+    new.accountable := old.accountable;
+    new.section := old.section;
+    new.sort_order := old.sort_order;
+    new.parent_entry_id := old.parent_entry_id;
+  end if;
+
+  return new;
+end;
+$$;

@@ -1,67 +1,105 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
-import { coreFunctionLabel } from '../lib/coreFunctions'
+import { groupItemsBySection, sectionLabel } from '../lib/coreFunctions'
 import { formatCount, toCount } from '../lib/opcr'
 import {
   formatWorkDate,
   groupDailyHistory,
   loadDailyContext,
   logsForDate,
+  readDailyCache,
   saveDailyLogs,
-  semesterCaption,
-  semesterTotal,
   todayValue,
+  writeDailyCache,
+  yearCaption,
+  yearTotal,
 } from '../lib/daily'
 import { Alert, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
 
 export default function DailyLog() {
   const { user } = useAuth()
   const { toast, toastPhase, showToast, clearToast } = useToast()
-  const [period, setPeriod] = useState(null)
-  const [staff, setStaff] = useState(null)
-  const [items, setItems] = useState([])
-  const [logs, setLogs] = useState([])
+  const initialCache = useMemo(() => readDailyCache(user?.id), [user?.id])
+  const [period, setPeriod] = useState(initialCache?.period || null)
+  const [staff, setStaff] = useState(initialCache?.staff || null)
+  const [items, setItems] = useState(initialCache?.items || [])
+  const [logs, setLogs] = useState(initialCache?.logs || [])
   const [workDate, setWorkDate] = useState(todayValue())
   const [quantities, setQuantities] = useState({})
   const [notes, setNotes] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialCache)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [expandedDays, setExpandedDays] = useState({})
+  const userRef = useRef(user)
 
-  async function load() {
-    if (!supabase || !user) {
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
+  async function load({ silent = false } = {}) {
+    const currentUser = userRef.current
+    if (!supabase || !currentUser) {
       setLoading(false)
       return
     }
+    if (!silent) setLoading(true)
     setError('')
-    const context = await loadDailyContext(supabase, user.id)
-    setPeriod(context.period)
-    setStaff(context.staff)
-    setItems(context.items)
-    setLogs(context.logs)
-    if (!context.period) {
-      setError('No active OPCR period is set. Ask an admin to run the seed SQL.')
+    try {
+      const context = await loadDailyContext(supabase, currentUser.id)
+      setPeriod(context.period)
+      setStaff(context.staff)
+      setItems(context.items)
+      setLogs(context.logs)
+      writeDailyCache({
+        userId: currentUser.id,
+        period: context.period,
+        staff: context.staff,
+        items: context.items,
+        logs: context.logs,
+      })
+      if (!context.period) {
+        setError('No active OPCR period is set. Ask an admin to run the seed SQL.')
+      }
+    } finally {
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     let active = true
+
     async function start() {
+      const cached = readDailyCache(user?.id)
       try {
-        await load()
+        if (cached) {
+          setPeriod(cached.period || null)
+          setStaff(cached.staff || null)
+          setItems(cached.items || [])
+          setLogs(cached.logs || [])
+          setLoading(false)
+          await load({ silent: true })
+        } else {
+          await load({ silent: false })
+        }
       } catch (err) {
-        if (active) setError(err.message)
-      } finally {
-        if (active) setLoading(false)
+        if (active) {
+          setError(err.message)
+          setLoading(false)
+        }
       }
     }
+
     start()
+    const poll = window.setInterval(() => {
+      load({ silent: true })
+    }, 12000)
     return () => {
       active = false
+      window.clearInterval(poll)
     }
   }, [user?.id])
 
@@ -79,13 +117,11 @@ export default function DailyLog() {
 
   const pendingRows = items.filter((item) => item.pending)
   const grouped = useMemo(() => {
-    const groups = []
-    for (const item of items) {
-      const last = groups[groups.length - 1]
-      if (last && last.category === item.category) last.items.push(item)
-      else groups.push({ category: item.category, items: [item] })
-    }
-    return groups
+    const buckets = groupItemsBySection(items)
+    const bySection = Object.fromEntries(buckets.map((group) => [group.section, group]))
+    return [1, 2]
+      .map((section) => bySection[section] || { section, category: sectionLabel(section), items: [] })
+      .filter((group) => group.items.length > 0)
   }, [items])
 
   const history = useMemo(() => groupDailyHistory(logs, items).slice(0, 14), [logs, items])
@@ -117,7 +153,7 @@ export default function DailyLog() {
         workDate,
         rows,
       })
-      await load()
+      await load({ silent: true })
       const filled = rows.filter((row) => toCount(row.quantity) > 0).length
       await writeAudit(
         supabase,
@@ -135,7 +171,7 @@ export default function DailyLog() {
 
   if (loading) return <LoadingState label="Loading daily log…" />
 
-  const semester = semesterCaption(workDate)
+  const yearLabel = yearCaption(workDate)
   const dayLabel = formatWorkDate(workDate)
 
   return (
@@ -167,7 +203,7 @@ export default function DailyLog() {
             <div className="min-w-0 pb-1">
               <p className="text-sm font-semibold text-slate-900">{dayLabel}</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Counts for this day add to the <strong>{semester}</strong> tally
+                Counts for this day add to the <strong>{yearLabel}</strong> tally
               </p>
             </div>
           </div>
@@ -209,7 +245,7 @@ export default function DailyLog() {
       )}
 
       {grouped.map((group) => (
-        <section key={group.category} className="card overflow-hidden">
+        <section key={group.section} className="card overflow-hidden">
           <div className="border-b border-amber-200 bg-amber-100 px-5 py-2.5">
             <h2 className="text-sm font-bold tracking-wide text-amber-950 uppercase">
               {group.category}
@@ -219,12 +255,12 @@ export default function DailyLog() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Core function</th>
+                  <th className="px-5 py-3 font-semibold">Output</th>
                   <th className="w-44 px-5 py-3 text-center font-semibold">This day’s count</th>
                   <th className="w-44 px-5 py-3 text-center font-semibold">
                     Running total
                     <span className="mt-0.5 block text-[10px] font-medium tracking-normal text-slate-400 normal-case">
-                      {semester}
+                      {yearLabel}
                     </span>
                   </th>
                   <th className="px-5 py-3 font-semibold">Note</th>
@@ -233,13 +269,13 @@ export default function DailyLog() {
               <tbody>
                 {group.items.map((item) => {
                   const itemKey = item.id || item.entry_id
-                  const total = semesterTotal(logs, item.id, workDate)
+                  const total = yearTotal(logs, item.id, workDate)
                   const typed = toCount(quantities[item.id])
                   const shownTotal = total - toCount(logByItem[item.id]?.quantity) + typed
                   return (
                     <tr key={itemKey} className="border-t border-slate-100">
                       <td className="px-5 py-3 align-middle font-semibold text-slate-900">
-                        {coreFunctionLabel(item.output) || 'New row'}
+                        {item.output || 'New row'}
                         {item.pending && (
                           <span className="mt-1 block text-xs font-medium text-amber-700">
                             Save My OPCR to enable counting
@@ -263,7 +299,7 @@ export default function DailyLog() {
                             }}
                             className="field h-11 px-2 text-center text-base font-bold"
                             placeholder="0"
-                            aria-label={`${coreFunctionLabel(item.output)} count for ${dayLabel}`}
+                            aria-label={`${item.output || 'Output'} count for ${dayLabel}`}
                           />
                         </div>
                       </td>

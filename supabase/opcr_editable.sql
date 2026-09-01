@@ -73,6 +73,7 @@ begin
     new.remarks := old.remarks;
     new.output := old.output;
     new.success_indicator := old.success_indicator;
+    new.accountable := old.accountable;
     new.section := old.section;
     new.sort_order := old.sort_order;
   end if;

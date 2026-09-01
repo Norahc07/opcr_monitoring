@@ -1,21 +1,27 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
-import { Lock, Mail } from 'lucide-react'
+import { Navigate, useLocation } from 'react-router-dom'
+import { ArrowLeft, Lock, Mail } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { Alert, BrandLogo, Button } from '../components/ui'
 
 export default function Login() {
   const { session, loading, configured, signIn } = useAuth()
+  const location = useLocation()
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState(
+    location.state?.passwordReset ? 'Password updated. Sign in with your new password.' : '',
+  )
   const [submitting, setSubmitting] = useState(false)
 
   if (!loading && session) return <Navigate to="/" replace />
 
-  async function handleSubmit(event) {
+  async function handleSignIn(event) {
     event.preventDefault()
     setError('')
+    setNotice('')
     setSubmitting(true)
     try {
       await signIn(email.trim(), password)
@@ -24,6 +30,13 @@ export default function Login() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function switchMode(nextMode) {
+    setMode(nextMode)
+    setError('')
+    setNotice('')
+    setPassword('')
   }
 
   return (
@@ -50,8 +63,14 @@ export default function Login() {
         <div className="card w-full max-w-md p-8">
           <div className="mb-8">
             <BrandLogo className="mb-4 h-12 w-auto object-contain lg:hidden" />
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Welcome back</h2>
-            <p className="mt-1 text-sm text-slate-500">Sign in to your OPCR workspace.</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+              {mode === 'login' ? 'Welcome back' : 'Forgot password?'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {mode === 'login'
+                ? 'Sign in with the login email and password your admin gave you.'
+                : 'Office accounts use custom login emails, not real inboxes.'}
+            </p>
           </div>
 
           {!configured && (
@@ -62,42 +81,82 @@ export default function Login() {
             </div>
           )}
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <label className="block">
-              <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
-                <Mail size={14} /> Email
-              </span>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="field"
-                placeholder="Enter your email address"
-                autoComplete="email"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
-                <Lock size={14} /> Password
-              </span>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="field"
-                placeholder="Enter your password"
-                autoComplete="current-password"
-              />
-            </label>
-            {error && <Alert tone="danger">{error}</Alert>}
-            <Button variant="primary" className="w-full" disabled={submitting || !configured} type="submit">
-              {submitting ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
+          {mode === 'forgot' && (
+            <button
+              type="button"
+              className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:text-teal-800"
+              onClick={() => switchMode('login')}
+            >
+              <ArrowLeft size={14} />
+              Back to sign in
+            </button>
+          )}
+
+          {mode === 'forgot' && (
+            <div className="mb-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              <p className="font-semibold text-slate-800">What to do</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                <li>Go to your office admin or head.</li>
+                <li>Tell them your name — they will reset your password.</li>
+                <li>Sign in with your login email and the new password they give you.</li>
+                <li>After signing in, open Profile to choose your own password.</li>
+              </ol>
+            </div>
+          )}
+
+          {mode === 'login' && (
+            <form className="space-y-4" onSubmit={handleSignIn}>
+              <label className="block">
+                <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <Mail size={14} /> Login email
+                </span>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="field"
+                  placeholder="e.g. bal@opcr.local"
+                  autoComplete="username"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <Lock size={14} /> Password
+                </span>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="field"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                />
+              </label>
+              {notice && <Alert tone="success">Password updated. Sign in with your new password.</Alert>}
+              {error && <Alert tone="danger">{error}</Alert>}
+              <Button variant="primary" className="w-full" disabled={submitting || !configured} type="submit">
+                {submitting ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
+          )}
+
+          {mode === 'login' && (
+            <p className="mt-4 text-center">
+              <button
+                type="button"
+                className="text-sm font-semibold text-teal-700 hover:text-teal-800"
+                onClick={() => switchMode('forgot')}
+              >
+                Forgot password?
+              </button>
+            </p>
+          )}
+
           <p className="mt-6 text-center text-xs leading-5 text-slate-500">
-            Accounts are created in the Supabase dashboard. Ask your head or admin if you need access.
+            Accounts are created by your admin. Ask your head or admin if you need access or forgot
+            your password.
           </p>
         </div>
       </section>

@@ -96,13 +96,83 @@ select {
   min-width: 1100px;
 }
 
+.my-tally .table-scroll table {
+  min-width: 0;
+}
+
+.my-tally .tally-table {
+  table-layout: fixed;
+}
+
+.my-tally .tally-col-output {
+  width: auto;
+}
+
+.my-tally .tally-col-num {
+  width: 9.5rem;
+}
+
+.tally-board .tally-table {
+  table-layout: fixed;
+}
+
+.tally-board .tally-col-output {
+  width: 15rem;
+}
+
+.tally-board .tally-col-total {
+  width: 9.25rem;
+}
+
+.tally-board .tally-col-staff {
+  width: 6.5rem;
+}
+
+.tally-board .tally-total-head {
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.tally-board .tally-total-title {
+  font-size: 0.875rem;
+}
+
+.tally-board .tally-staff-group-head {
+  font-size: 0.875rem;
+}
+
+.tally-board .tally-total-kind {
+  min-height: 1rem;
+  font-size: 0.75rem;
+}
+
+input.field[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input.field[type='number']::-webkit-outer-spin-button,
+input.field[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .opcr-sheet {
   overflow-x: auto;
 }
 
-.opcr-sheet table {
+.opcr-sheet table:not(.opcr-rating-scale) {
   min-width: 1120px;
   width: 100%;
+  border-collapse: collapse;
+}
+
+.opcr-sheet table.opcr-rating-scale {
+  min-width: 0;
+  width: calc(
+    var(--opcr-rating-col-level) + var(--opcr-rating-col-range) + var(--opcr-rating-col-score)
+  );
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -117,15 +187,19 @@ select {
 }
 
 .opcr-col-output {
-  width: 14%;
+  width: 12%;
 }
 
 .opcr-col-success {
-  width: 30%;
+  width: 24%;
+}
+
+.opcr-col-accountable {
+  width: 12%;
 }
 
 .opcr-col-actual {
-  width: 22%;
+  width: 20%;
 }
 
 .opcr-col-rating {
@@ -164,6 +238,10 @@ select {
   box-shadow: inset 0 3px 0 0 #0f766e;
 }
 
+.opcr-line-continued td {
+  border-top: 1px dashed rgb(203 213 225);
+}
+
 .opcr-sheet th,
 .opcr-sheet td,
 .opcr-approved th,
@@ -175,11 +253,18 @@ select {
 .opcr-sheet thead th {
   background: #ffd700;
   color: #000;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   letter-spacing: 0.02em;
   font-weight: 700;
   padding: 0.7rem 0.65rem;
   text-align: center;
+}
+
+.opcr-sheet thead th .opcr-head-note {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .opcr-sheet .opcr-subhead th {
@@ -217,7 +302,7 @@ select {
   background: #fff;
 }
 
-.opcr-sheet .opcr-approved + table {
+.opcr-sheet .opcr-approved + .opcr-print-fill > .opcr-functions {
   margin-top: -1px;
 }
 
@@ -238,17 +323,82 @@ select {
 }
 
 .opcr-approved .opcr-approved-sign {
-  height: 7.25rem;
-  padding: 0.45rem 0.7rem 0.55rem;
-  vertical-align: bottom;
+  padding: 0.4rem 0.5rem 0.45rem;
+  vertical-align: top;
   text-align: center;
   background: #fff;
 }
 
-.opcr-approved .opcr-approved-role {
-  padding: 0.4rem 0.45rem;
+/* Empty space above approver name for physical signature */
+.opcr-approved-signatory {
+  --opcr-approved-signature-space: 4.5rem;
+  padding-top: var(--opcr-approved-signature-space);
+  margin-bottom: 0.55rem;
+}
+
+/*
+ * OPCR rating scale (under "Approved by")
+ * WIDTH — edit these 3 values (px):
+ *   col 1 = rating name | col 2 = percent range | col 3 = score
+ * HEIGHT — edit row-height (px), padding-y, font-size, or line-height below
+ */
+.opcr-rating-scale {
+  --opcr-rating-col-level: 200px;
+  --opcr-rating-col-range: 170px;
+  --opcr-rating-col-score: 120px;
+  --opcr-rating-padding-y: 0px;
+  --opcr-rating-padding-x: 6px;
+  --opcr-rating-row-height: 9px;
+  --opcr-rating-font-size: 9px;
+  --opcr-rating-line-height: 9px;
+  margin: 0.35rem auto 0;
+  table-layout: fixed;
+  width: calc(
+    var(--opcr-rating-col-level) + var(--opcr-rating-col-range) + var(--opcr-rating-col-score)
+  );
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.opcr-rating-scale-col-level {
+  width: var(--opcr-rating-col-level);
+}
+
+.opcr-rating-scale-col-range {
+  width: var(--opcr-rating-col-range);
+}
+
+.opcr-rating-scale-col-score {
+  width: var(--opcr-rating-col-score);
+}
+
+.opcr-rating-scale td {
+  border: 1px solid #000;
+  height: var(--opcr-rating-row-height);
+  max-height: var(--opcr-rating-row-height);
+  padding: var(--opcr-rating-padding-y) var(--opcr-rating-padding-x);
   text-align: center;
-  font-size: 0.875rem;
+  font-size: var(--opcr-rating-font-size);
+  line-height: var(--opcr-rating-line-height);
+  vertical-align: middle;
+}
+
+.opcr-rating-scale-level {
+  white-space: nowrap;
+}
+
+.opcr-rating-scale-range,
+.opcr-rating-scale-score {
+  white-space: nowrap;
+}
+
+.opcr-rating-scale-level,
+.opcr-rating-scale-score {
+  font-weight: 700;
+}
+
+.opcr-rating-scale-range {
+  font-weight: 400;
 }
 
 .opcr-approved .opcr-approved-name,
@@ -268,16 +418,53 @@ select {
 }
 
 .opcr-approved .opcr-approved-date {
-  height: 7.25rem;
-  padding: 0.45rem 0.4rem;
+  padding: 0.4rem 0.35rem;
   vertical-align: middle;
   text-align: center;
+  background: #fff;
 }
 
 .opcr-approved-date-value {
   display: block;
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.opcr-header-fields {
+  width: min(100%, 52rem);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.opcr-header-title,
+.opcr-header-line {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.55rem 0.75rem;
+  text-align: center;
+  color: #0f172a;
+  outline: none;
+}
+
+.opcr-header-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.opcr-header-line {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.opcr-header-title:focus,
+.opcr-header-line:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 2px rgb(15 118 110 / 0.12);
 }
 
 .opcr-signer {
@@ -578,13 +765,21 @@ select {
     margin-top: 0;
   }
 
-  .opcr-sheet table,
+  .opcr-sheet table:not(.opcr-rating-scale),
   .opcr-approved,
   .opcr-functions,
   .opcr-closing {
     min-width: 0 !important;
     width: 100% !important;
     table-layout: fixed;
+  }
+
+  .opcr-sheet table.opcr-rating-scale {
+    width: calc(
+      var(--opcr-rating-col-level) + var(--opcr-rating-col-range) + var(--opcr-rating-col-score)
+    ) !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
   }
 
   .opcr-print-header {
@@ -644,17 +839,40 @@ select {
     margin-top: 0.35rem !important;
   }
 
-  .opcr-approved .opcr-approved-label,
-  .opcr-approved .opcr-approved-role {
+  .opcr-approved .opcr-approved-label {
     padding: 0.28rem 0.5rem;
     font-size: 0.72rem;
   }
 
   .opcr-approved .opcr-approved-sign,
   .opcr-approved .opcr-approved-date {
-    height: 1.35in;
-    padding: 0.35rem 0.5rem 0.4rem;
-    vertical-align: bottom;
+    height: auto;
+    min-height: 0;
+    padding: 0.25rem 0.4rem 0.3rem;
+    vertical-align: middle;
+  }
+
+  .opcr-approved-signatory {
+    --opcr-approved-signature-space: 0.7in;
+    padding-top: var(--opcr-approved-signature-space);
+    margin-bottom: 0.4rem;
+  }
+
+  .opcr-rating-scale {
+    margin-top: 0.2rem;
+    --opcr-rating-padding-y: 0px;
+    --opcr-rating-padding-x: 4px;
+    --opcr-rating-row-height: 11px;
+    --opcr-rating-font-size: 7.5px;
+    --opcr-rating-line-height: 11px;
+  }
+
+  .opcr-rating-scale td {
+    height: var(--opcr-rating-row-height);
+    max-height: var(--opcr-rating-row-height);
+    padding: var(--opcr-rating-padding-y) var(--opcr-rating-padding-x);
+    font-size: var(--opcr-rating-font-size);
+    line-height: var(--opcr-rating-line-height);
   }
 
   .opcr-approved-date-value {
@@ -663,7 +881,11 @@ select {
 
   .opcr-sheet thead th {
     padding: 0.22rem 0.35rem;
-    font-size: 0.62rem;
+    font-size: 0.66rem;
+  }
+
+  .opcr-sheet thead th .opcr-head-note {
+    font-size: 0.58rem;
   }
 
   .opcr-functions tbody tr.opcr-section {
@@ -728,12 +950,12 @@ select {
 
   .tally-print-heading {
     display: block;
-    margin-bottom: 0.45rem;
+    margin-bottom: 0.28rem;
     text-align: center;
   }
 
   .tally-print-heading h1 {
-    font-size: 1.15rem;
+    font-size: 0.92rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -741,8 +963,8 @@ select {
   }
 
   .tally-print-kicker {
-    margin-bottom: 0.2rem;
-    font-size: 0.68rem;
+    margin-bottom: 0.08rem;
+    font-size: 0.58rem;
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -750,52 +972,147 @@ select {
   }
 
   .tally-print-heading p:last-child {
-    margin-top: 0.2rem;
-    font-size: 0.78rem;
+    margin-top: 0.08rem;
+    font-size: 0.64rem;
     color: #334155;
+  }
+
+  .tally-board {
+    width: 100%;
   }
 
   .tally-board .card {
     overflow: visible !important;
+    margin: 0;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  .tally-print-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 7.86in;
+    max-height: 7.86in;
+    overflow: hidden;
+    break-after: page;
+    page-break-after: always;
     break-inside: avoid;
     page-break-inside: avoid;
-    margin-bottom: 0.45rem;
-    border: 1px solid #000 !important;
   }
 
-  .tally-board .table-scroll {
-    overflow: visible !important;
+  .tally-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
-  .tally-board .table-scroll table {
+  .tally-print-fill {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tally-board .table-scroll,
+  body.printing-tally .tally-board .table-scroll {
+    overflow: hidden !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tally-board .table-scroll table,
+  body.printing-tally .tally-board .table-scroll table {
     min-width: 0 !important;
     width: 100% !important;
+    height: 100%;
     border-collapse: collapse;
-    table-layout: auto;
+    table-layout: fixed;
+    font-size: 0.48rem;
+  }
+
+  body.printing-tally .tally-board {
+    width: 100%;
+  }
+
+  body.printing-tally .tally-print-section-head {
+    flex: 0 0 auto;
+    padding: 0.12rem 0.28rem !important;
+    border-bottom: 1px solid #000 !important;
+    background: #fde68a !important;
+  }
+
+  body.printing-tally .tally-board h2 {
+    padding: 0 !important;
+    font-size: 0.58rem !important;
+    letter-spacing: 0.08em;
   }
 
   .tally-board thead {
     display: table-header-group;
   }
 
+  .tally-board tbody {
+    height: 100%;
+  }
+
+  .tally-board tbody tr {
+    height: 1%;
+  }
+
   .tally-board th,
-  .tally-board td {
+  .tally-board td,
+  body.printing-tally .tally-board th,
+  body.printing-tally .tally-board td {
     border: 1px solid #000 !important;
-    padding: 0.18rem 0.22rem !important;
-    font-size: 0.6rem;
-    line-height: 1.25;
+    padding: 0.08rem 0.1rem !important;
+    font-size: 0.48rem;
+    line-height: 1.12;
     vertical-align: middle;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  body.printing-tally .tally-board .tally-col-output,
+  body.printing-tally .tally-board th:first-child,
+  body.printing-tally .tally-board td:first-child {
+    width: 13% !important;
+  }
+
+  body.printing-tally .tally-board .tally-col-total {
+    width: 7.5% !important;
+  }
+
+  body.printing-tally .tally-board .tally-col-staff {
+    width: auto !important;
+  }
+
+  body.printing-tally .tally-board .min-w-\[100px\],
+  body.printing-tally .tally-board .min-w-\[120px\],
+  body.printing-tally .tally-board .min-w-\[140px\] {
+    min-width: 0 !important;
+    width: auto !important;
   }
 
   .tally-board .sticky {
     position: static !important;
   }
 
-  .tally-board h2 {
-    padding: 0.28rem 0.4rem !important;
-    font-size: 0.68rem !important;
+  body.printing-tally .tally-board .tally-print-heading h1 {
+    font-size: 0.92rem;
   }
 
+  body.printing-tally .tally-board .tally-output-period {
+    margin-top: 0.05rem;
+    font-size: 0.4rem;
+    line-height: 1.1;
+  }
+
+  body.printing-tally .tally-board input.field,
   .tally-board input.field {
     width: 100% !important;
     min-width: 0;
@@ -803,7 +1120,7 @@ select {
     box-shadow: none !important;
     background: transparent !important;
     padding: 0 !important;
-    font-size: 0.68rem;
+    font-size: 0.5rem;
     font-weight: 700;
     -moz-appearance: textfield;
     appearance: textfield;
@@ -813,5 +1130,40 @@ select {
   .tally-board input.field::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+
+  body.printing-tally .tally-board .text-base {
+    font-size: 0.5rem !important;
+    line-height: 1.1;
+  }
+
+  body.printing-tally .tally-board .text-lg {
+    font-size: 0.55rem !important;
+  }
+
+  body.printing-tally .tally-board .text-\[10px\],
+  body.printing-tally .tally-board .text-xs {
+    font-size: 0.38rem !important;
+    line-height: 1.1;
+  }
+
+  body.printing-tally .tally-staff-head {
+    padding: 0 !important;
+  }
+
+  body.printing-tally .tally-staff-primary {
+    font-size: 0.5rem !important;
+    line-height: 1.1 !important;
+  }
+
+  body.printing-tally .tally-staff-secondary {
+    margin-top: 0.04rem !important;
+    font-size: 0.36rem !important;
+    line-height: 1.1 !important;
+  }
+
+  body.printing-tally .tally-board .rounded-lg {
+    padding: 0 !important;
+    background: transparent !important;
   }
 }

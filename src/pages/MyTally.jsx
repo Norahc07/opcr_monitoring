@@ -3,34 +3,71 @@ import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
-import { Alert, Button, EmptyState, LoadingState, PageHeader, ProgressBar, Toast, useToast } from '../components/ui'
+import { Alert, EmptyState, LoadingState } from '../components/ui'
 import {
+  annualPeriodLabel,
+  buildBoardRows,
   formatCount,
   loadTallyContext,
   personLabel,
   progressPercent,
+  readBoardCache,
   readMyTallyCache,
-  saveStaffTallies,
-  SEMESTERS,
+  TALLY_PERIOD_ID,
   tallyKey,
   toCount,
   writeMyTallyCache,
 } from '../lib/opcr'
-import { coreFunctionLabel, orderCoreFunctionItems } from '../lib/coreFunctions'
+import { coreFunctionLabel, groupItemsBySection } from '../lib/coreFunctions'
+import { loadDailyContext, todayValue, yearTotal } from '../lib/daily'
+
+const TONE_TEXT = {
+  met: 'text-green-600',
+  short: 'text-red-600',
+  neutral: 'text-slate-900',
+}
+
+function statusTone(accomplished, target) {
+  const goal = toCount(target)
+  if (goal <= 0) return 'neutral'
+  return toCount(accomplished) >= goal ? 'met' : 'short'
+}
+
+function seedMyTally(userId) {
+  const mine = userId ? readMyTallyCache(userId) : null
+  if (mine?.items?.length) return mine
+  const board = readBoardCache()
+  if (!board?.items?.length) return mine
+  const me = board.people?.find((person) => person.user_id === userId) || null
+  const values = {}
+  const targets = {}
+  if (me) {
+    for (const item of board.items) {
+      const key = tallyKey(me.id, item.id, TALLY_PERIOD_ID)
+      const row = board.rows?.[key]
+      values[key] = row?.accomplished ?? ''
+      targets[key] = toCount(row?.target)
+    }
+  }
+  return {
+    period: board.period,
+    staff: me,
+    items: board.items,
+    values,
+    targets,
+  }
+}
 
 export default function MyTally() {
   const { user, profile, isAdmin } = useAuth()
-  const { toast, toastPhase, showToast, clearToast } = useToast()
-  const cached = useMemo(() => (user?.id ? readMyTallyCache(user.id) : null), [user?.id])
+  const cached = useMemo(() => seedMyTally(user?.id), [user?.id])
   const [period, setPeriod] = useState(cached?.period || null)
   const [staff, setStaff] = useState(cached?.staff || null)
   const [items, setItems] = useState(cached?.items || [])
   const [values, setValues] = useState(cached?.values || {})
   const [targets, setTargets] = useState(cached?.targets || {})
-  const [assignedOnly, setAssignedOnly] = useState(false)
   const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(!cached)
-  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(!cached?.items?.length)
   const [error, setError] = useState('')
 
   const personId = staff?.id || user?.id
@@ -38,14 +75,15 @@ export default function MyTally() {
   useEffect(() => {
     let active = true
 
-    async function load() {
+    async function load({ silent = false } = {}) {
       if (!supabase || !user) {
         setLoading(false)
         return
       }
+      if (!silent) setLoading(true)
 
       try {
-        const context = await loadTallyContext(supabase, { userId: user.id })
+        const context = await loadTallyContext(supabase, { includePeople: true })
         if (!active) return
         if (!context.period) {
           setError('No active OPCR period is set. Ask an admin to run the seed SQL.')
@@ -53,19 +91,39 @@ export default function MyTally() {
           return
         }
 
-        const linked = context.staff
+        const linked =
+          context.staff ||
+          context.people.find((person) => person.user_id === user.id) ||
+          null
         const id = linked?.id || user.id
+        let dailyLogs = []
+        try {
+          const daily = await loadDailyContext(supabase, user.id)
+          dailyLogs = daily.logs || []
+        } catch {
+          dailyLogs = []
+        }
+        if (!active) return
+        const boardRows = buildBoardRows(
+          linked ? [linked] : [],
+          context.items,
+          context.tallies,
+          context.personItemByOutput,
+        )
+        const workDate = todayValue()
         const nextValues = {}
         const nextTargets = {}
         for (const item of context.items) {
-          for (const semester of SEMESTERS) {
-            const row = context.tallies.find(
-              (tally) => tally.item_id === item.id && tally.semester === semester.id,
-            )
-            const key = tallyKey(id, item.id, semester.id)
-            nextValues[key] = row ? String(toCount(row.accomplished)) : ''
-            nextTargets[key] = toCount(row?.target)
-          }
+          const key = tallyKey(id, item.id, TALLY_PERIOD_ID)
+          const row = boardRows[key]
+          const personItemId = row?.item_id || item.id
+          const fromDaily = Math.max(
+            yearTotal(dailyLogs, item.id, workDate),
+            personItemId !== item.id ? yearTotal(dailyLogs, personItemId, workDate) : 0,
+          )
+          const accomplished = Math.max(toCount(row?.accomplished), fromDaily)
+          nextValues[key] = accomplished ? String(accomplished) : ''
+          nextTargets[key] = toCount(row?.target)
         }
 
         setPeriod(context.period)
@@ -91,133 +149,87 @@ export default function MyTally() {
       } catch (err) {
         if (active) setError(err.message)
       } finally {
-        if (active) setLoading(false)
+        if (active && !silent) setLoading(false)
       }
     }
 
     load()
+    const poll = window.setInterval(() => {
+      load({ silent: true })
+    }, 12000)
     return () => {
       active = false
+      window.clearInterval(poll)
     }
   }, [user, isAdmin])
 
+  const listedItems = items
+
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return orderCoreFunctionItems(items).filter((item) => {
-      const assigned =
-        !assignedOnly || SEMESTERS.some((semester) => targets[tallyKey(personId, item.id, semester.id)] > 0)
+    return listedItems.filter((item) => {
       const label = coreFunctionLabel(item.output).toLowerCase()
-      const matches =
+      return (
         !needle ||
         item.output.toLowerCase().includes(needle) ||
         label.includes(needle) ||
         item.success_indicator.toLowerCase().includes(needle)
-      return assigned && matches
+      )
     })
-  }, [assignedOnly, items, personId, query, targets])
+  }, [listedItems, query])
 
-  const grouped = useMemo(() => {
-    const groups = []
-    for (const item of visibleItems) {
-      const last = groups[groups.length - 1]
-      if (last && last.category === item.category) last.items.push(item)
-      else groups.push({ category: item.category, items: [item] })
-    }
-    return groups
-  }, [visibleItems])
+  const grouped = useMemo(() => groupItemsBySection(visibleItems), [visibleItems])
 
   const summary = useMemo(() => {
     let filled = 0
     let assigned = 0
     for (const item of items) {
-      for (const semester of SEMESTERS) {
-        const key = personId ? tallyKey(personId, item.id, semester.id) : ''
-        if (targets[key] > 0) assigned += 1
-        if (toCount(values[key]) > 0) filled += 1
-      }
+      const key = personId ? tallyKey(personId, item.id, TALLY_PERIOD_ID) : ''
+      if (toCount(targets[key]) > 0) assigned += 1
+      if (toCount(values[key]) > 0) filled += 1
     }
-    return { filled, assigned, total: items.length * 2 }
+    return { filled, assigned }
   }, [items, personId, targets, values])
 
-  async function save() {
-    if (!period || !user || !staff?.id) return
-    setSaving(true)
-    setError('')
-    clearToast()
-    try {
-      const rows = items.flatMap((item) =>
-        SEMESTERS.map((semester) => ({
-          item_id: item.id,
-          semester: semester.id,
-          accomplished: values[tallyKey(staff.id, item.id, semester.id)],
-        })),
-      )
-      await saveStaffTallies(supabase, period.id, staff.id, user.id, rows)
-      writeMyTallyCache({
-        userId: user.id,
-        period,
-        staff,
-        items,
-        values,
-        targets,
-      })
-      showToast('Your tally was saved.')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
+  const year = Math.max(Number(period?.year) || 0, new Date().getFullYear())
 
   if (loading && !period) return <LoadingState label="Loading your tally…" />
 
   return (
-    <div className="w-full space-y-5 pb-20">
-      <PageHeader
-        kicker="Tally per person"
-        title={personLabel(staff || profile)}
-        description={`Enter your personal accomplished counts for ${period?.year || 'this year'}. ${staff?.position ? `${staff.position}. ` : ''}Only you can edit this page. Your head/admin sets targets and views office totals on Tally board.`}
-      />
+    <div className="my-tally w-full space-y-4 pb-8">
+      <div>
+        <p className="text-xs font-semibold tracking-[0.18em] text-teal-700 uppercase">
+          Tally per person
+        </p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+          {personLabel(staff || profile)}
+        </h1>
+        <p className="mt-1.5 overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap text-slate-500">
+          {`Your assigned targets and year totals for ${annualPeriodLabel(year)}.${staff?.position ? ` ${staff.position}.` : ''} Add work on Daily log; this page is view only.`}
+        </p>
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="card px-4 py-4">
+      <div className="flex items-stretch gap-3">
+        <div className="card flex w-40 shrink-0 flex-col justify-center px-4 py-3">
           <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Filled</p>
-          <p className="mt-1 text-2xl font-semibold">{summary.filled}</p>
+          <p className="mt-0.5 text-2xl font-semibold">{summary.filled}</p>
         </div>
-        <div className="card px-4 py-4">
+        <div className="card flex w-48 shrink-0 flex-col justify-center px-4 py-3">
           <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Assigned targets</p>
-          <p className="mt-1 text-2xl font-semibold">{summary.assigned}</p>
+          <p className="mt-0.5 text-2xl font-semibold">{summary.assigned}</p>
         </div>
-        <div className="card px-4 py-4">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Semester slots</p>
-          <p className="mt-1 text-2xl font-semibold">{summary.total}</p>
+        <div className="card flex min-w-0 flex-1 items-center p-3">
+          <div className="relative w-full">
+            <Search size={16} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search outputs…"
+              className="field field-with-icon"
+            />
+          </div>
         </div>
       </div>
-
-      <div className="card flex flex-wrap items-center gap-3 p-3">
-        <div className="relative min-w-60 flex-1">
-          <Search size={16} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by output or success indicator…"
-            className="field field-with-icon"
-          />
-        </div>
-        <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={assignedOnly}
-            onChange={(event) => setAssignedOnly(event.target.checked)}
-          />
-          Assigned to me only
-        </label>
-      </div>
-
-      <Alert>
-        This is your personal tally. Type your accomplished counts for each task. Your admin sees
-        these on Tally board under Accomplishments.
-      </Alert>
 
       {error && (
         <Alert tone="danger">
@@ -233,83 +245,88 @@ export default function MyTally() {
       )}
 
       {grouped.map((group) => (
-        <section key={group.category} className="space-y-3">
-          <h2 className="px-1 text-xs font-semibold tracking-[0.16em] text-slate-500 uppercase">
-            {group.category}
-          </h2>
-          {group.items.map((item) => (
-            <article key={item.id} className="card p-5">
-              <h3 className="text-lg font-semibold tracking-tight text-slate-900">
-                {coreFunctionLabel(item.output)}
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-500">{item.success_indicator}</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {SEMESTERS.map((semester) => {
-                  const key = personId ? tallyKey(personId, item.id, semester.id) : semester.id
+        <section key={group.category} className="card overflow-hidden">
+          <div className="border-b border-amber-200 bg-amber-100 px-4 py-2.5">
+            <h2 className="text-sm font-bold tracking-wide text-amber-950 uppercase">
+              {group.category}
+            </h2>
+          </div>
+          <div className="table-scroll">
+            <table className="tally-table w-full text-left text-sm">
+              <colgroup>
+                <col className="tally-col-output" />
+                <col className="tally-col-num" />
+                <col className="tally-col-num" />
+                <col className="tally-col-num" />
+              </colgroup>
+              <thead>
+                <tr className="bg-slate-100 text-sm tracking-wide text-slate-600 uppercase">
+                  <th className="tally-col-output px-4 py-2 font-semibold">Output</th>
+                  <th className="tally-col-num border-l border-slate-200 px-2 py-2 text-center font-semibold">
+                    Target
+                  </th>
+                  <th className="tally-col-num border-l border-slate-200 bg-teal-50 px-2 py-2 text-center font-semibold text-teal-900">
+                    Accomplished
+                  </th>
+                  <th className="tally-col-num border-l border-slate-200 px-2 py-2 text-center font-semibold">
+                    Progress
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.items.map((item) => {
+                  const key = personId ? tallyKey(personId, item.id, TALLY_PERIOD_ID) : item.id
                   const target = targets[key] || 0
                   const accomplished = values[key] ?? ''
                   const percent = progressPercent(accomplished, target)
+                  const tone = statusTone(accomplished, target)
+                  const zero = toCount(accomplished) <= 0
                   return (
-                    <div
-                      key={semester.id}
-                      className={`rounded-2xl border p-4 ${
-                        semester.id === 'jan_june'
-                          ? 'border-emerald-100 bg-emerald-50/80'
-                          : 'border-rose-100 bg-rose-50/80'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold tracking-wide text-slate-600 uppercase">
-                          {semester.label}
+                    <tr key={item.id} className="bg-slate-50/40">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">{item.output}</p>
+                        <p className="tally-output-period mt-0.5 text-xs font-medium text-slate-600">
+                          {annualPeriodLabel(year)}
                         </p>
-                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                          Target {formatCount(target)}
-                        </span>
-                      </div>
-                      <label className="mt-3 block">
-                        <span className="mb-1 block text-xs font-medium text-slate-600">Accomplished</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={accomplished}
-                          onChange={(event) =>
-                            setValues((current) => ({ ...current, [key]: event.target.value }))
-                          }
-                          className="field text-lg font-semibold"
-                          placeholder="Enter count, e.g. 12"
-                        />
-                      </label>
-                      {percent != null && (
-                        <div className="mt-3 space-y-1.5">
-                          <ProgressBar percent={percent} />
-                          <p className={`text-xs font-medium ${percent >= 100 ? 'text-teal-800' : 'text-slate-600'}`}>
-                            {formatCount(accomplished || 0)} / {formatCount(target)} · {percent}%
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                      </td>
+                      <td className="border-l border-white/60 px-2 py-3 text-center text-base font-bold text-slate-700">
+                        {formatCount(target)}
+                        {toCount(target) <= 0 && (
+                          <p className="mt-0.5 text-[10px] font-semibold text-slate-500">Not assigned</p>
+                        )}
+                      </td>
+                      <td className="border-l border-white/60 bg-teal-50/80 px-2 py-3 text-center">
+                        <p
+                          className={`text-lg font-bold ${
+                            zero && tone === 'neutral' ? 'text-slate-400' : TONE_TEXT[tone]
+                          }`}
+                        >
+                          {formatCount(accomplished)}
+                        </p>
+                        <p className="mt-0.5 text-[10px] font-semibold text-slate-500">From Daily log</p>
+                      </td>
+                      <td className={`border-l border-white/60 px-2 py-3 text-center text-sm font-semibold ${TONE_TEXT[tone]}`}>
+                        {percent == null ? '—' : `${formatCount(accomplished || 0)} / ${formatCount(target)} · ${percent}%`}
+                      </td>
+                    </tr>
                   )
                 })}
-              </div>
-            </article>
-          ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ))}
 
       {visibleItems.length === 0 && (
         <EmptyState
-          title="Nothing to show"
-          body="Ask the head/admin to set your targets, clear the search, or turn off “Assigned to me only”."
+          title={items.length === 0 ? 'No outputs yet' : 'Nothing matches'}
+          body={
+            items.length === 0
+              ? 'Open My OPCR and save the office form so outputs appear here, or ask an admin to set the office OPCR.'
+              : 'Clear the search to see your outputs again.'
+          }
         />
       )}
-
-      <div className="sticky bottom-4 z-10 flex justify-end">
-        <Button disabled={saving || !items.length || !staff?.id} onClick={save} className="shadow-lg">
-          {saving ? 'Saving…' : 'Save my tally'}
-        </Button>
-      </div>
-      <Toast message={toast} phase={toastPhase} />
     </div>
   )
 }

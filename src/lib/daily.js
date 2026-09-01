@@ -1,5 +1,4 @@
-import { coreFunctionLabel, orderCoreFunctionItems, sectionForOutput, sectionLabel } from './coreFunctions'
-import { formatCount, getActivePeriod, getLinkedStaff, hydrateOpcrEntry, toCount } from './opcr'
+import { formatCount, getActivePeriod, getLinkedStaff, hydrateOpcrEntry, itemsFromOpcrEntries, loadCanonicalOpcrEntries, missingSemesterError, toCount } from './opcr'
 
 export function todayValue() {
   const now = new Date()
@@ -7,9 +6,28 @@ export function todayValue() {
   return local.toISOString().slice(0, 10)
 }
 
+export function yearCaption(value) {
+  const year = String(value || '').slice(0, 4)
+  return year ? `January–December ${year}` : 'January–December'
+}
+
+/** @deprecated use yearCaption */
 export function semesterCaption(value) {
-  const month = Number(String(value || '').slice(5, 7))
-  return month > 0 && month <= 6 ? 'January–June' : 'July–December'
+  return yearCaption(value)
+}
+
+export function yearTotal(logs, itemId, workDate) {
+  const year = String(workDate || '').slice(0, 4)
+  return (logs || []).reduce((sum, row) => {
+    if (row.item_id !== itemId) return sum
+    if (year && !String(row.work_date || '').startsWith(year)) return sum
+    return sum + toCount(row.quantity)
+  }, 0)
+}
+
+/** @deprecated use yearTotal */
+export function semesterTotal(logs, itemId, workDate) {
+  return yearTotal(logs, itemId, workDate)
 }
 
 export function formatWorkDate(value) {
@@ -31,7 +49,7 @@ export function missingDailyError(error) {
       'Daily logs are not set up yet. Open Supabase → SQL Editor → run supabase/daily.sql, then refresh this page.',
     )
   }
-  return error
+  return missingSemesterError(error)
 }
 
 export async function loadDailyContext(supabase, userId) {
@@ -41,13 +59,7 @@ export async function loadDailyContext(supabase, userId) {
     return { period: null, staff, items: [], logs: [] }
   }
 
-  const [{ data: items, error: itemsError }, { data: logs, error: logsError }, { data: form, error: formError }] =
-    await Promise.all([
-      supabase
-        .from('opcr_items')
-        .select('*')
-        .eq('period_id', period.id)
-        .order('sort_order', { ascending: true }),
+  const [{ data: logs, error: logsError }, { data: form, error: formError }] = await Promise.all([
       staff?.id
         ? supabase
             .from('opcr_daily_logs')
@@ -67,7 +79,6 @@ export async function loadDailyContext(supabase, userId) {
         : Promise.resolve({ data: null, error: null }),
     ])
 
-  if (itemsError) throw itemsError
   if (logsError) throw missingDailyError(logsError)
   if (formError) throw formError
 
@@ -83,72 +94,22 @@ export async function loadDailyContext(supabase, userId) {
     )
   }
 
+  const canonical = await loadCanonicalOpcrEntries(supabase, period.id)
+  const sourceEntries = canonical.length ? canonical : entries
+  const items = itemsFromOpcrEntries(sourceEntries, period.id)
+  const activeItemIds = new Set(items.map((item) => item.id).filter(Boolean))
+  const filteredLogs = (logs || []).filter((row) => activeItemIds.has(row.item_id))
+
   return {
     period,
     staff,
-    items: buildDailyItems(entries, items || [], period.id),
-    logs: logs || [],
+    items,
+    logs: filteredLogs,
   }
-}
-
-function toDailyItemFromEntry(entry, periodId) {
-  const section = Number(entry.section) || 1
-  return {
-    id: entry.item_id || null,
-    entry_id: entry.id,
-    period_id: periodId,
-    category: sectionLabel(section),
-    output: entry.output || '',
-    success_indicator: entry.success_indicator || '',
-    sort_order: section * 1000 + (Number(entry.sort_order) || 0),
-    section,
-    pending: !entry.item_id,
-  }
-}
-
-function toDailyItemFromOffice(item) {
-  const section = Number(item.section) || sectionForOutput(item.output)
-  return {
-    ...item,
-    category: sectionLabel(section),
-    section,
-    pending: false,
-  }
-}
-
-export function buildDailyItems(entries, officeItems, periodId) {
-  const fromForm = (entries || []).map((entry) => toDailyItemFromEntry(entry, periodId))
-  const have = new Set(fromForm.map((item) => item.id).filter(Boolean))
-  const extras = (officeItems || [])
-    .filter((item) => item.origin === 'opcr' && !have.has(item.id))
-    .map(toDailyItemFromOffice)
-
-  if (!fromForm.length) {
-    return orderCoreFunctionItems(officeItems || []).map(toDailyItemFromOffice)
-  }
-
-  return [...fromForm, ...extras].sort(
-    (a, b) =>
-      (Number(a.section) || 1) - (Number(b.section) || 1) ||
-      (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
-      String(a.output || '').localeCompare(String(b.output || '')),
-  )
 }
 
 export function logsForDate(logs, workDate) {
   return (logs || []).filter((row) => row.work_date === workDate)
-}
-
-export function semesterTotal(logs, itemId, workDate) {
-  const month = Number(String(workDate || '').slice(5, 7))
-  const inFirst = month > 0 && month <= 6
-  return (logs || []).reduce((sum, row) => {
-    if (row.item_id !== itemId) return sum
-    const rowMonth = Number(String(row.work_date || '').slice(5, 7))
-    const rowFirst = rowMonth > 0 && rowMonth <= 6
-    if (rowFirst !== inFirst) return sum
-    return sum + toCount(row.quantity)
-  }, 0)
 }
 
 export async function saveDailyLogs(supabase, { periodId, staffId, userId, workDate, rows }) {
@@ -187,9 +148,11 @@ export async function saveDailyLogs(supabase, { periodId, staffId, userId, workD
 }
 
 export function groupDailyHistory(logs, items) {
-  const itemName = Object.fromEntries((items || []).map((item) => [item.id, coreFunctionLabel(item.output)]))
+  const activeIds = new Set((items || []).map((item) => item.id).filter(Boolean))
+  const itemName = Object.fromEntries((items || []).map((item) => [item.id, item.output || 'Item']))
   const byDate = new Map()
   for (const row of logs || []) {
+    if (!activeIds.has(row.item_id)) continue
     const date = row.work_date
     if (!byDate.has(date)) byDate.set(date, [])
     byDate.get(date).push({
@@ -203,4 +166,41 @@ export function groupDailyHistory(logs, items) {
     rows: rows.filter((row) => toCount(row.quantity) > 0 || row.notes),
     total: rows.reduce((sum, row) => sum + toCount(row.quantity), 0),
   }))
+}
+
+const DAILY_CACHE_KEY = 'opcr-daily-log'
+const DAILY_CACHE_VERSION = 'opcr-src-v3'
+
+export function readDailyCache(userId) {
+  if (!userId) return null
+  try {
+    const raw = sessionStorage.getItem(DAILY_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || parsed.userId !== userId) return null
+    if (parsed.cacheVersion !== DAILY_CACHE_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function writeDailyCache(snapshot) {
+  if (!snapshot?.userId) return
+  try {
+    sessionStorage.setItem(
+      DAILY_CACHE_KEY,
+      JSON.stringify({ ...snapshot, cacheVersion: DAILY_CACHE_VERSION }),
+    )
+  } catch {
+    // Ignore quota / private-mode failures.
+  }
+}
+
+export function clearDailyCache() {
+  try {
+    sessionStorage.removeItem(DAILY_CACHE_KEY)
+  } catch {
+    // Ignore private-mode failures.
+  }
 }

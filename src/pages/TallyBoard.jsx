@@ -5,7 +5,9 @@ import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import { Alert, Button, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
 import {
+  annualPeriodLabel,
   buildBoardRows,
+  clearBoardCache,
   formatCount,
   loadTallyContext,
   patchBoardCacheRow,
@@ -13,17 +15,16 @@ import {
   readBoardCache,
   saveAdminTallies,
   saveStaffTallies,
-  SEMESTERS,
-  semesterPeriodLabel,
+  TALLY_PERIOD_ID,
   tallyKey,
   toCount,
   writeBoardCache,
 } from '../lib/opcr'
-import { coreFunctionLabel, orderCoreFunctionItems } from '../lib/coreFunctions'
+import { groupItemsBySection } from '../lib/coreFunctions'
 
-function rowTotal(people, itemId, semester, rows, field) {
+function rowTotal(people, itemId, rows, field) {
   return people.reduce((sum, person) => {
-    const row = rows[tallyKey(person.id, itemId, semester)]
+    const row = rows[tallyKey(person.id, itemId, TALLY_PERIOD_ID)]
     return sum + toCount(row?.[field])
   }, 0)
 }
@@ -43,9 +44,13 @@ const TONE_TEXT = {
 function StaffHeader({ person }) {
   const { primary, secondary } = personTableHeader(person)
   return (
-    <div className="px-1 py-1">
-      <p className="text-sm font-bold text-slate-900">{primary}</p>
-      {secondary && <p className="mt-0.5 text-[10px] leading-tight text-slate-500">{secondary}</p>}
+    <div className="tally-staff-head px-1 py-1">
+      <p className="tally-staff-primary text-sm font-bold text-slate-900">{primary}</p>
+      {secondary && (
+        <p className="tally-staff-secondary mt-0.5 text-[10px] leading-tight text-slate-500">
+          {secondary}
+        </p>
+      )}
     </div>
   )
 }
@@ -67,6 +72,9 @@ export default function TallyBoard() {
   const dirtyRef = useRef({})
   const rowsRef = useRef({})
   const saveTimer = useRef(null)
+  const isAdminRef = useRef(isAdmin)
+  const periodRef = useRef(period)
+  const userRef = useRef(user)
 
   const year = Math.max(Number(period?.year) || 0, new Date().getFullYear())
   const isTargetView = isAdmin && view === 'target'
@@ -77,6 +85,8 @@ export default function TallyBoard() {
     [people, user?.id],
   )
   const myStaffId = myStaff?.id
+  const isTargetViewRef = useRef(isTargetView)
+  const myStaffIdRef = useRef(myStaffId)
 
   const tablePeople = useMemo(() => people.filter((person) => person.user_id), [people])
 
@@ -94,11 +104,23 @@ export default function TallyBoard() {
   }, [rows])
 
   useEffect(() => {
+    isTargetViewRef.current = isTargetView
+    isAdminRef.current = isAdmin
+    myStaffIdRef.current = myStaffId
+    periodRef.current = period
+    userRef.current = user
+  }, [isTargetView, isAdmin, myStaffId, period, user])
+
+  useEffect(() => {
     if (!isAdmin) setView('accomplished')
   }, [isAdmin])
 
   useEffect(() => {
-    loadData({ silent: Boolean(cached) })
+    const legacy = Object.keys(cached?.rows || {}).some(
+      (key) => key.includes(':jan_june') || key.includes(':july_dec'),
+    )
+    if (legacy) clearBoardCache()
+    loadData({ silent: Boolean(cached) && !legacy })
   }, [])
 
   useEffect(() => {
@@ -129,8 +151,8 @@ export default function TallyBoard() {
 
   function applyTallyChange(tally, options = {}) {
     const personId = tally.staff_id || tally.user_id
-    if (!personId) return
-    const key = tallyKey(personId, tally.item_id, tally.semester)
+    if (!personId || !tally.item_id) return
+    const key = tallyKey(personId, tally.item_id, TALLY_PERIOD_ID)
     const keepLocalTarget = isTargetView && Boolean(dirtyRef.current[key])
     const keepLocalAccomplished = !isTargetView && Boolean(dirtyRef.current[key])
     setRows((current) => {
@@ -138,7 +160,7 @@ export default function TallyBoard() {
         staff_id: personId,
         user_id: tally.user_id || null,
         item_id: tally.item_id,
-        semester: tally.semester,
+        semester: TALLY_PERIOD_ID,
         target: '',
         accomplished: '',
       }
@@ -171,7 +193,12 @@ export default function TallyBoard() {
         return
       }
 
-      const nextRows = buildBoardRows(context.people, context.items, context.tallies)
+      const nextRows = buildBoardRows(
+        context.people,
+        context.items,
+        context.tallies,
+        context.personItemByOutput,
+      )
       setPeriod(context.period)
       setItems(context.items)
       setPeople(context.people)
@@ -197,20 +224,11 @@ export default function TallyBoard() {
     }
   }
 
-  const grouped = useMemo(() => {
-    const coreItems = orderCoreFunctionItems(items)
-    const groups = []
-    for (const item of coreItems) {
-      const last = groups[groups.length - 1]
-      if (last && last.category === item.category) last.items.push(item)
-      else groups.push({ category: item.category, items: [item] })
-    }
-    return groups
-  }, [items])
+  const grouped = useMemo(() => groupItemsBySection(items), [items])
 
-  function updateCell(personId, itemId, semester, value) {
+  function updateCell(personId, itemId, value) {
     if (!canEditCell(personId)) return
-    const key = tallyKey(personId, itemId, semester)
+    const key = tallyKey(personId, itemId, TALLY_PERIOD_ID)
     const person = people.find((row) => row.id === personId)
     setRows((current) => ({
       ...current,
@@ -219,7 +237,7 @@ export default function TallyBoard() {
           staff_id: personId,
           user_id: person?.user_id || user?.id || null,
           item_id: itemId,
-          semester,
+          semester: TALLY_PERIOD_ID,
           target: '',
           accomplished: '',
         }),
@@ -227,39 +245,55 @@ export default function TallyBoard() {
       },
     }))
     setDirty((current) => ({ ...current, [key]: true }))
-    if (!isTargetView) scheduleAccomplishmentSave()
+    scheduleAutoSave()
   }
 
-  function scheduleAccomplishmentSave() {
+  function scheduleAutoSave() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => {
-      saveAccomplishments()
+      persistDirtyRows()
     }, 700)
   }
 
-  async function saveAccomplishments() {
-    if (!period || !user) return
+  function flushAutoSave() {
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    return persistDirtyRows()
+  }
+
+  async function persistDirtyRows(options = {}) {
+    const activePeriod = periodRef.current
+    const activeUser = userRef.current
+    if (!activePeriod || !activeUser) return
+
+    const targetView = options.targetView ?? isTargetViewRef.current
+    const admin = isAdminRef.current
+    const staffId = myStaffIdRef.current
     const currentRows = rowsRef.current
+
     let payload = Object.keys(dirtyRef.current)
       .map((key) => currentRows[key])
       .filter(Boolean)
-    if (!isAdmin) {
-      if (!myStaffId) return
-      payload = payload.filter((row) => row.staff_id === myStaffId)
+
+    if (!targetView && !admin) {
+      if (!staffId) return
+      payload = payload.filter((row) => row.staff_id === staffId)
     }
     if (!payload.length) return
 
     setSaving(true)
     setError('')
     try {
-      if (isAdmin) {
-        await saveAdminTallies(supabase, period.id, payload)
+      if (admin) {
+        await saveAdminTallies(supabase, activePeriod.id, payload)
       } else {
         await saveStaffTallies(
           supabase,
-          period.id,
-          myStaffId,
-          user.id,
+          activePeriod.id,
+          staffId,
+          activeUser.id,
           payload.map((row) => ({
             item_id: row.item_id,
             semester: row.semester,
@@ -267,23 +301,25 @@ export default function TallyBoard() {
           })),
         )
       }
+
       const remaining = { ...dirtyRef.current }
       for (const row of payload) {
         delete remaining[tallyKey(row.staff_id, row.item_id, row.semester)]
       }
       setDirty(remaining)
-      writeBoardCache({ period, items, people, rows: currentRows })
+      writeBoardCache({
+        period: activePeriod,
+        items,
+        people,
+        rows: currentRows,
+      })
       await writeAudit(
         supabase,
-        'Saved accomplishments',
+        targetView ? 'Saved targets' : 'Saved accomplishments',
         'Tally board',
         `${payload.length} cell${payload.length === 1 ? '' : 's'}`,
       )
-      showToast(
-        isAdmin
-          ? 'Accomplishments saved.'
-          : 'Your accomplishments were saved. Admin can see them now.',
-      )
+      showToast(targetView ? 'Targets saved.' : 'Changes saved.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -291,33 +327,12 @@ export default function TallyBoard() {
     }
   }
 
-  async function save() {
-    if (!period) return
-    setSaving(true)
-    setError('')
-    clearToast()
-    try {
-      const payload = Object.keys(dirty).map((key) => rows[key]).filter(Boolean)
-      if (!payload.length) {
-        showToast('No changes to save.')
-        setSaving(false)
-        return
-      }
-      await saveAdminTallies(supabase, period.id, payload)
-      setDirty({})
-      writeBoardCache({ period, items, people, rows })
-      await writeAudit(
-        supabase,
-        'Saved targets',
-        'Tally board',
-        `${payload.length} cell${payload.length === 1 ? '' : 's'}`,
-      )
-      showToast('Targets saved.')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
+  function changeView(nextView) {
+    if (view === nextView) return
+    if (Object.keys(dirtyRef.current).length > 0) {
+      void persistDirtyRows({ targetView: view === 'target' })
     }
+    setView(nextView)
   }
 
   function printTally() {
@@ -329,10 +344,20 @@ export default function TallyBoard() {
 
   if (loading && !period) return <LoadingState label="Loading office tally…" />
 
-  const totalColLabel = isTargetView ? 'Total target' : 'Total accomplished'
+  const totalColHeader = (
+    <>
+      <span className="tally-total-title block text-sm">Total</span>
+      <span className="tally-total-kind block text-xs font-semibold normal-case tracking-normal">
+        {isTargetView ? 'Target' : 'Accomplishment'}
+      </span>
+      <span className="block text-xs font-semibold normal-case tracking-normal">
+        Jan–Dec {year}
+      </span>
+    </>
+  )
 
   return (
-    <div className="tally-board w-full space-y-5 pb-20 print:space-y-3 print:pb-0">
+    <div className="tally-board w-full space-y-5 pb-20 print:space-y-0 print:pb-0">
       <div className="print-hide">
       <PageHeader
         kicker={period?.office_name}
@@ -349,7 +374,7 @@ export default function TallyBoard() {
             {isAdmin && (
               <Segmented
                 value={view}
-                onChange={setView}
+                onChange={changeView}
                 options={[
                   { id: 'target', label: 'Target' },
                   { id: 'accomplished', label: 'Accomplishments' },
@@ -363,21 +388,13 @@ export default function TallyBoard() {
             {liveNotice && (
               <span className="text-xs font-medium text-teal-700">{liveNotice}</span>
             )}
-            {saving && !isTargetView && (
+            {saving && (
               <span className="text-xs font-medium text-slate-500">Saving…</span>
             )}
           </div>
         }
       />
       </div>
-
-      <header className="tally-print-heading">
-        <p className="tally-print-kicker">{period?.office_name || 'E-Learning Ville'}</p>
-        <h1>Office tally sheet</h1>
-        <p>
-          {isTargetView ? 'Targets' : 'Accomplishments'} · January to December {year}
-        </p>
-      </header>
 
       {error && (
         <div className="print-hide">
@@ -389,16 +406,17 @@ export default function TallyBoard() {
       <Alert tone={isTargetView ? 'warning' : 'info'}>
         {isTargetView ? (
           <>
-            Enter <strong>targets</strong> for each person in the columns below, then Save targets.
+            Enter <strong>targets</strong> for each person in the columns below. Changes save
+            automatically.
           </>
         ) : isAdmin ? (
           <>
-            Type counts for any staff in January–June and July–December. They save automatically.
+            Type counts for any staff for January–December {year}. They save automatically.
             Green means the target is met; red means not yet.
           </>
         ) : myStaffId ? (
           <>
-            Your column is highlighted. Type your counts for January–June and July–December. They
+            Your column is highlighted. Type your counts for January–December {year}. They
             save automatically. Green means the target is met; red means not yet.
           </>
         ) : (
@@ -420,50 +438,56 @@ export default function TallyBoard() {
       )}
 
       {grouped.map((group) => (
-        <section key={group.category} className="card overflow-hidden">
-          <div className="border-b border-amber-200 bg-amber-100 px-4 py-2.5">
+        <section key={group.category} className="card overflow-hidden tally-print-page">
+          <header className="tally-print-heading">
+            <p className="tally-print-kicker">{period?.office_name || 'E-Learning Ville'}</p>
+            <h1>Office tally sheet</h1>
+            <p>
+              {isTargetView ? 'Targets' : 'Accomplishments'} · January to December {year}
+            </p>
+          </header>
+          <div className="border-b border-amber-200 bg-amber-100 px-4 py-2.5 tally-print-section-head">
             <h2 className="text-sm font-bold tracking-wide text-amber-950 uppercase">
               {group.category}
             </h2>
           </div>
-          <div className="table-scroll">
-            <table className="w-full text-left text-sm">
+          <div className="table-scroll tally-print-fill">
+            <table className="tally-table w-full text-left text-sm">
+              <colgroup>
+                <col className="tally-col-output" />
+                {tablePeople.map((person) => (
+                  <col key={person.id} className="tally-col-staff" />
+                ))}
+                <col className="tally-col-total" />
+              </colgroup>
               <thead>
-                <tr className="bg-slate-100 text-xs tracking-wide text-slate-600 uppercase">
+                <tr className="bg-slate-100 text-sm tracking-wide text-slate-600 uppercase">
                   <th
-                    className="sticky left-0 z-20 bg-slate-100 px-4 py-2 font-semibold"
+                    className="tally-col-output sticky left-0 z-20 bg-slate-100 px-4 py-2 font-semibold"
                     rowSpan={2}
                   >
-                    Core function
+                    Output
                   </th>
                   {tablePeople.length > 0 && (
                     <th
                       colSpan={tablePeople.length}
-                      className="border-l border-slate-200 px-2 py-2 text-center font-semibold text-teal-900"
+                      className="tally-staff-group-head border-l border-slate-200 px-2 py-2 text-center text-sm font-semibold text-teal-900"
                     >
                       {isTargetView ? 'Staff targets' : 'Staff accomplishments'}
                     </th>
                   )}
                   <th
-                    className="min-w-[120px] border-l border-slate-200 bg-teal-50 px-4 py-2 text-center font-semibold text-teal-900"
+                    className="tally-col-total tally-total-head border-l border-slate-200 bg-teal-50 px-2 py-2 text-center font-semibold text-teal-900"
                     rowSpan={2}
                   >
-                    {totalColLabel}
+                    {totalColHeader}
                   </th>
-                  {!isTargetView && (
-                    <th
-                      className="min-w-[140px] border-l border-slate-200 bg-teal-100 px-4 py-2 text-center font-semibold text-teal-950"
-                      rowSpan={2}
-                    >
-                      Total for Jan–Dec {year}
-                    </th>
-                  )}
                 </tr>
                 <tr className="bg-slate-50 text-xs text-slate-600">
                   {tablePeople.map((person) => (
                     <th
                       key={person.id}
-                      className={`min-w-[100px] border-l border-slate-200 px-2 py-2 text-center align-bottom ${
+                      className={`tally-col-staff border-l border-slate-200 px-2 py-2 text-center align-bottom ${
                         person.id === myStaffId ? 'bg-teal-50' : ''
                       }`}
                     >
@@ -474,123 +498,95 @@ export default function TallyBoard() {
               </thead>
               <tbody>
                 {group.items.map((item) => {
-                  const janTarget = rowTotal(tablePeople, item.id, 'jan_june', rows, 'target')
-                  const julTarget = rowTotal(tablePeople, item.id, 'july_dec', rows, 'target')
-                  const janAccomp = rowTotal(tablePeople, item.id, 'jan_june', rows, 'accomplished')
-                  const julAccomp = rowTotal(tablePeople, item.id, 'july_dec', rows, 'accomplished')
-                  const janTotal = isTargetView ? janTarget : janAccomp
-                  const julTotal = isTargetView ? julTarget : julAccomp
-                  const yearAccomp = janAccomp + julAccomp
-                  const yearTarget = janTarget + julTarget
-                  const yearTone = statusTone(yearAccomp, yearTarget)
-                  return SEMESTERS.map((semester, semesterIndex) => {
-                    const isJan = semester.id === 'jan_june'
-                    const rowBg = isJan ? 'bg-rose-50/70' : 'bg-emerald-50/70'
-                    const stickyBg = isJan ? 'bg-rose-50' : 'bg-emerald-50'
-                    const total = isJan ? janTotal : julTotal
-                    const semesterTarget = isJan ? janTarget : julTarget
-                    const semesterAccomp = isJan ? janAccomp : julAccomp
-                    const totalTone = isTargetView
-                      ? 'neutral'
-                      : statusTone(semesterAccomp, semesterTarget)
-                    return (
-                      <tr key={`${item.id}-${semester.id}`} className={rowBg}>
-                        <td className={`sticky left-0 z-10 px-4 py-3 ${stickyBg}`}>
-                          <p className="font-semibold text-slate-900">
-                            {coreFunctionLabel(item.output)}
-                          </p>
-                          <p className="mt-0.5 text-xs font-medium text-slate-600">
-                            {semesterPeriodLabel(semester.id, year)}
-                          </p>
-                        </td>
-                        {tablePeople.map((person) => {
-                          const key = tallyKey(person.id, item.id, semester.id)
-                          const row = rows[key]
-                          const value = row?.[field] ?? ''
-                          const targetValue = row?.target ?? ''
-                          const display = formatCount(value)
-                          const editable = canEditCell(person.id)
-                          const { primary } = personTableHeader(person)
-                          const tone = isTargetView
-                            ? 'neutral'
-                            : statusTone(row?.accomplished, targetValue)
-                          const zero = toCount(value) <= 0
-                          return (
-                            <td
-                              key={person.id}
-                              className={`border-l border-white/60 px-2 py-2 text-center ${
-                                person.id === myStaffId ? 'bg-teal-50/80' : ''
-                              }`}
-                            >
-                              {editable ? (
-                                <div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    value={value}
-                                    onChange={(event) =>
-                                      updateCell(person.id, item.id, semester.id, event.target.value)
-                                    }
-                                    className={`field mx-auto w-20 px-2 py-1.5 text-center font-bold ${TONE_TEXT[tone]}`}
-                                    placeholder="0"
-                                    aria-label={`${primary} ${semester.shortLabel} ${
-                                      isTargetView ? 'target' : 'accomplished'
-                                    }`}
-                                  />
-                                  {!isTargetView && toCount(targetValue) > 0 && (
-                                    <p className={`mt-1 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
-                                      Target {formatCount(targetValue)}
-                                    </p>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="rounded-lg bg-white/70 px-2 py-2">
-                                  <p
-                                    className={`text-base font-bold ${
-                                      zero && tone === 'neutral'
-                                        ? 'text-slate-400'
-                                        : TONE_TEXT[tone]
-                                    }`}
-                                  >
-                                    {display}
-                                  </p>
-                                  {!isTargetView && toCount(targetValue) > 0 && (
-                                    <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
-                                      Target {formatCount(targetValue)}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                          )
-                        })}
-                        <td className="border-l border-slate-200 bg-slate-100/90 px-4 py-3 text-center text-base font-bold">
-                          <span className={isTargetView ? 'text-teal-900' : TONE_TEXT[totalTone]}>
-                            {formatCount(total)}
-                          </span>
-                          {!isTargetView && toCount(semesterTarget) > 0 && (
-                            <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[totalTone]}`}>
-                              Target {formatCount(semesterTarget)}
-                            </p>
-                          )}
-                        </td>
-                        {!isTargetView && semesterIndex === 0 && (
+                  const itemTarget = rowTotal(tablePeople, item.id, rows, 'target')
+                  const itemAccomp = rowTotal(tablePeople, item.id, rows, 'accomplished')
+                  const total = isTargetView ? itemTarget : itemAccomp
+                  const totalTone = isTargetView ? 'neutral' : statusTone(itemAccomp, itemTarget)
+                  return (
+                    <tr key={item.id} className="bg-slate-50/40">
+                      <td className="sticky left-0 z-10 bg-slate-50 px-4 py-3">
+                        <p className="font-semibold text-slate-900">
+                          {item.output}
+                        </p>
+                        <p className="tally-output-period mt-0.5 text-xs font-medium text-slate-600">
+                          {annualPeriodLabel(year)}
+                        </p>
+                      </td>
+                      {tablePeople.map((person) => {
+                        const key = tallyKey(person.id, item.id, TALLY_PERIOD_ID)
+                        const row = rows[key]
+                        const value = row?.[field] ?? ''
+                        const targetValue = row?.target ?? ''
+                        const display = formatCount(value)
+                        const editable = canEditCell(person.id)
+                        const { primary } = personTableHeader(person)
+                        const tone = isTargetView
+                          ? 'neutral'
+                          : statusTone(row?.accomplished, targetValue)
+                        const zero = toCount(value) <= 0
+                        return (
                           <td
-                            rowSpan={SEMESTERS.length}
-                            className="border-l border-slate-200 bg-teal-50 px-4 py-3 text-center align-middle text-lg font-bold"
+                            key={person.id}
+                            className={`border-l border-white/60 px-2 py-2 text-center ${
+                              person.id === myStaffId ? 'bg-teal-50/80' : ''
+                            }`}
                           >
-                            <span className={TONE_TEXT[yearTone]}>{formatCount(yearAccomp)}</span>
-                            {toCount(yearTarget) > 0 && (
-                              <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[yearTone]}`}>
-                                Target {formatCount(yearTarget)}
-                              </p>
+                            {editable ? (
+                              <div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={value}
+                                  onChange={(event) =>
+                                    updateCell(person.id, item.id, event.target.value)
+                                  }
+                                  onBlur={flushAutoSave}
+                                  className={`field mx-auto w-20 px-2 py-1.5 text-center font-bold ${TONE_TEXT[tone]}`}
+                                  placeholder="0"
+                                  aria-label={`${primary} Jan–Dec ${
+                                    isTargetView ? 'target' : 'accomplished'
+                                  }`}
+                                />
+                                {!isTargetView && toCount(targetValue) > 0 && (
+                                  <p className={`mt-1 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
+                                    Target {formatCount(targetValue)}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="rounded-lg bg-white/70 px-2 py-2">
+                                <p
+                                  className={`text-base font-bold ${
+                                    zero && tone === 'neutral'
+                                      ? 'text-slate-400'
+                                      : TONE_TEXT[tone]
+                                  }`}
+                                >
+                                  {display}
+                                </p>
+                                {!isTargetView && toCount(targetValue) > 0 && (
+                                  <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
+                                    Target {formatCount(targetValue)}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </td>
+                        )
+                      })}
+                      <td className="tally-col-total border-l border-slate-200 bg-teal-50/80 px-2 py-3 text-center text-lg font-bold">
+                        <span className={isTargetView ? 'text-teal-900' : TONE_TEXT[totalTone]}>
+                          {formatCount(total)}
+                        </span>
+                        {!isTargetView && toCount(itemTarget) > 0 && (
+                          <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[totalTone]}`}>
+                            Target {formatCount(itemTarget)}
+                          </p>
                         )}
-                      </tr>
-                    )
-                  })
+                      </td>
+                    </tr>
+                  )
                 })}
               </tbody>
             </table>
@@ -598,13 +594,6 @@ export default function TallyBoard() {
         </section>
       ))}
 
-      {isTargetView && (
-        <div className="sticky bottom-4 z-10 flex justify-end print-hide">
-          <Button disabled={saving} onClick={save} className="shadow-lg">
-            {saving ? 'Saving…' : 'Save targets'}
-          </Button>
-        </div>
-      )}
       <Toast message={toast} phase={toastPhase} />
     </div>
   )

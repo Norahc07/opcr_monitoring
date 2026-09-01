@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   ChevronUp,
   ClipboardList,
   CalendarDays,
   LayoutGrid,
+  ListChecks,
   LogOut,
   ScrollText,
   UserRound,
@@ -12,6 +13,13 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { Avatar, BrandLogo, Button } from './ui'
+import KeepAlive from './KeepAlive'
+import TallyBoard from '../pages/TallyBoard'
+import MyTally from '../pages/MyTally'
+import DailyLog from '../pages/DailyLog'
+import MyOpcr from '../pages/MyOpcr'
+
+const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr'])
 
 const linkClass = ({ isActive }) =>
   `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
@@ -22,8 +30,10 @@ const linkClass = ({ isActive }) =>
 
 export default function Layout() {
   const { profile, isAdmin, signOut, user } = useAuth()
+  const { pathname } = useLocation()
   const displayName = profile?.full_name || user?.email || 'OPCR user'
   const [showTop, setShowTop] = useState(false)
+  const showWorkPage = WORK_PATHS.has(pathname)
 
   useEffect(() => {
     function onScroll() {
@@ -51,6 +61,10 @@ export default function Layout() {
           <NavLink to="/" end className={linkClass}>
             <LayoutGrid size={18} />
             Tally board
+          </NavLink>
+          <NavLink to="/my-tally" className={linkClass}>
+            <ListChecks size={18} />
+            My Tally
           </NavLink>
           <NavLink to="/daily" className={linkClass}>
             <CalendarDays size={18} />
@@ -100,7 +114,17 @@ export default function Layout() {
           </Button>
         </header>
         <main className="w-full p-4 sm:px-5 sm:py-6 print:p-0">
-          <Outlet />
+          <KeepAlive active={pathname === '/'}>
+            <TallyBoard />
+          </KeepAlive>
+          {pathname === '/my-tally' && <MyTally />}
+          <KeepAlive active={pathname === '/daily'}>
+            <DailyLog />
+          </KeepAlive>
+          <KeepAlive active={pathname === '/opcr'}>
+            <MyOpcr />
+          </KeepAlive>
+          {!showWorkPage && <Outlet />}
         </main>
         {showTop && (
           <button

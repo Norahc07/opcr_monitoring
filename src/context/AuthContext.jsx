@@ -101,6 +101,36 @@ export function AuthProvider({ children }) {
         if (signInError) throw signInError
         await writeAudit(supabase, 'Signed in', 'Login', email)
       },
+      async resetPassword(email) {
+        if (!supabase) throw new Error('Supabase is not configured.')
+        const appUrl = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, '')
+        const redirectTo = `${appUrl}/reset-password`
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo,
+        })
+        if (resetError) throw resetError
+      },
+      async updatePassword(password) {
+        if (!supabase) throw new Error('Supabase is not configured.')
+        const { error: updateError } = await supabase.auth.updateUser({ password })
+        if (updateError) throw updateError
+      },
+      async updateProfile(updates) {
+        if (!supabase || !session?.user) throw new Error('You must be signed in.')
+        const payload = {
+          full_name: updates.fullName?.trim() ?? '',
+          short_name: updates.shortName?.trim() ?? '',
+          position: updates.position?.trim() ?? '',
+        }
+        const { error: saveError } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('id', session.user.id)
+        if (saveError) throw saveError
+        const nextProfile = await fetchProfile(session.user.id)
+        setProfile(nextProfile)
+        return nextProfile
+      },
       async signOut() {
         if (!supabase) return
         await writeAudit(supabase, 'Signed out', 'Login')

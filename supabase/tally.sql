@@ -1,6 +1,6 @@
 -- Additive tally-per-person schema.
--- Run this if you already applied schema.sql earlier.
--- New projects can skip this and only run schema.sql + seed.sql + seed_tally.sql.
+-- DEPRECATED: use schema.sql + tally_annual.sql (or fix_tally_semester.sql) instead.
+-- This file kept only for very old projects that never migrated to office_staff tallies.
 
 alter table public.profiles
   add column if not exists short_name text not null default '';

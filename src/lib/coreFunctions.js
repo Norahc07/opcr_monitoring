@@ -155,15 +155,19 @@ export const SECTION4 = [
 
 export const CORE_FUNCTIONS = [...SECTION1, ...SECTION2, ...SECTION3, ...SECTION4]
 export const OPCR_SECTIONS = [SECTION1, SECTION2, SECTION3, SECTION4]
+export const OPCR_SECTION_COUNT = 2
 export const OPCR_SECTION_TITLES = {
-  1: 'Core Function',
+  1: 'Core Functions',
   2: 'Support Function',
-  3: 'Admin and Finance Function',
-  4: 'Strategic Function',
+}
+
+export function normalizeSection(section) {
+  const value = Number(section) || 1
+  return value <= 1 ? 1 : 2
 }
 
 export function sectionLabel(section) {
-  return OPCR_SECTION_TITLES[Number(section)] || OPCR_SECTION_TITLES[1]
+  return OPCR_SECTION_TITLES[normalizeSection(section)]
 }
 
 export function sectionForOutput(output) {
@@ -172,16 +176,22 @@ export function sectionForOutput(output) {
     .toLowerCase()
   if (!name) return 1
 
-  for (let index = 0; index < OPCR_SECTIONS.length; index += 1) {
-    const exact = OPCR_SECTIONS[index].some((spec) => spec.keys.some((key) => name === key))
-    if (exact) return index + 1
+  for (const spec of SECTION1) {
+    if (spec.keys.some((key) => name === key) || spec.output.toLowerCase() === name) return 1
+  }
+  for (const spec of SECTION1) {
+    if (spec.keys.some((key) => key.length > 3 && name.includes(key))) return 1
   }
 
-  for (let index = 0; index < OPCR_SECTIONS.length; index += 1) {
-    const fuzzy = OPCR_SECTIONS[index].some((spec) =>
-      spec.keys.some((key) => key.length > 3 && name.includes(key)),
-    )
-    if (fuzzy) return index + 1
+  for (const group of [SECTION2, SECTION3, SECTION4]) {
+    for (const spec of group) {
+      if (spec.keys.some((key) => name === key) || spec.output.toLowerCase() === name) return 2
+    }
+  }
+  for (const group of [SECTION2, SECTION3, SECTION4]) {
+    for (const spec of group) {
+      if (spec.keys.some((key) => key.length > 3 && name.includes(key))) return 2
+    }
   }
 
   return 1
@@ -217,8 +227,23 @@ export function coreFunctionLabel(output) {
   return matchCoreFunction(output)?.output || String(output || '').trim()
 }
 
+export function outputKey(output) {
+  const label = coreFunctionLabel(output)
+  return label.trim().toLowerCase() || String(output || '').trim().toLowerCase()
+}
+
 export function orderCoreFunctionItems(items) {
-  const remaining = [...(items || [])]
+  const unique = []
+  const seen = new Set()
+  for (const item of items || []) {
+    if (item?.id) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+    }
+    unique.push(item)
+  }
+
+  const remaining = [...unique]
   const ordered = []
   for (const spec of CORE_FUNCTIONS) {
     const index = remaining.findIndex(
@@ -238,4 +263,50 @@ export function orderCoreFunctionItems(items) {
     else ordered.splice(insertAt, 0, item)
   }
   return ordered
+}
+
+export function sectionFromItem(item) {
+  if (Number(item?.section) > 0) return normalizeSection(item.section)
+  const category = String(item?.category || '')
+    .trim()
+    .toLowerCase()
+  if (category.includes('support')) return 2
+  return sectionForOutput(item?.output)
+}
+
+function sortSectionItems(items, section) {
+  return (items || [])
+    .filter((item) => sectionFromItem(item) === section)
+    .sort(
+      (a, b) =>
+        (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+        String(a.output || '').localeCompare(String(b.output || '')),
+    )
+    .map((item) => {
+      const normalized = sectionFromItem(item)
+      return { ...item, section: normalized, category: sectionLabel(normalized) }
+    })
+}
+
+export function groupItemsBySection(items) {
+  const unique = []
+  const seenIds = new Set()
+  const seenOutputs = new Set()
+  for (const item of items || []) {
+    const idKey = item?.id || item?.entry_id
+    const outKey = outputKey(item?.output)
+    if (idKey && seenIds.has(idKey)) continue
+    if (outKey && seenOutputs.has(outKey)) continue
+    if (idKey) seenIds.add(idKey)
+    if (outKey) seenOutputs.add(outKey)
+    unique.push(item)
+  }
+
+  return [1, 2]
+    .map((section) => ({
+      section,
+      category: sectionLabel(section),
+      items: sortSectionItems(unique, section),
+    }))
+    .filter((group) => group.items.length > 0)
 }

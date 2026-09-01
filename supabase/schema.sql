@@ -108,6 +108,15 @@ alter table public.opcr_forms
 alter table public.opcr_forms
   add column if not exists final_rater_name text not null default '';
 
+alter table public.opcr_forms
+  add column if not exists header_title text not null default '';
+
+alter table public.opcr_forms
+  add column if not exists header_office_line text not null default '';
+
+alter table public.opcr_forms
+  add column if not exists header_commitment_line text not null default '';
+
 create table if not exists public.opcr_entries (
   id uuid primary key default gen_random_uuid(),
   form_id uuid not null references public.opcr_forms(id) on delete cascade,
@@ -116,6 +125,8 @@ create table if not exists public.opcr_entries (
   success_indicator text not null default '',
   section integer not null default 1,
   sort_order integer not null default 0,
+  parent_entry_id uuid references public.opcr_entries(id) on delete cascade,
+  accountable text not null default '',
   actual_accomplishment text not null default '',
   remarks text not null default '',
   rating_q numeric(3, 1) check (rating_q is null or (rating_q >= 1 and rating_q <= 5)),
@@ -135,6 +146,10 @@ create index if not exists opcr_items_period_idx on public.opcr_items (period_id
 create index if not exists opcr_forms_period_idx on public.opcr_forms (period_id);
 create index if not exists opcr_forms_user_idx on public.opcr_forms (user_id);
 create index if not exists opcr_entries_form_idx on public.opcr_entries (form_id);
+create index if not exists opcr_entries_parent_idx on public.opcr_entries (parent_entry_id);
+
+alter table public.opcr_entries
+  add column if not exists parent_entry_id uuid references public.opcr_entries(id) on delete cascade;
 
 alter table public.opcr_entries
   alter column item_id drop not null;
@@ -150,6 +165,9 @@ alter table public.opcr_entries
 
 alter table public.opcr_entries
   add column if not exists sort_order integer not null default 0;
+
+alter table public.opcr_entries
+  add column if not exists accountable text not null default '';
 
 create or replace function public.is_admin()
 returns boolean
@@ -307,8 +325,10 @@ begin
     new.remarks := old.remarks;
     new.output := old.output;
     new.success_indicator := old.success_indicator;
+    new.accountable := old.accountable;
     new.section := old.section;
     new.sort_order := old.sort_order;
+    new.parent_entry_id := old.parent_entry_id;
   end if;
 
   return new;
@@ -351,6 +371,12 @@ begin
   ) then
     return;
   end if;
+
+  delete from public.opcr_daily_logs
+  where item_id = p_item_id;
+
+  delete from public.opcr_tallies
+  where item_id = p_item_id;
 
   delete from public.opcr_items
   where id = p_item_id
@@ -418,7 +444,7 @@ drop policy if exists "forms_select" on public.opcr_forms;
 create policy "forms_select"
   on public.opcr_forms for select
   to authenticated
-  using (user_id = auth.uid() or public.is_admin());
+  using (true);
 
 drop policy if exists "forms_insert" on public.opcr_forms;
 create policy "forms_insert"
@@ -437,20 +463,15 @@ drop policy if exists "entries_select" on public.opcr_entries;
 create policy "entries_select"
   on public.opcr_entries for select
   to authenticated
-  using (
-    public.is_admin()
-    or exists (
-      select 1 from public.opcr_forms f
-      where f.id = form_id and f.user_id = auth.uid()
-    )
-  );
+  using (true);
 
 drop policy if exists "entries_insert" on public.opcr_entries;
 create policy "entries_insert"
   on public.opcr_entries for insert
   to authenticated
   with check (
-    exists (
+    public.is_admin()
+    or exists (
       select 1 from public.opcr_forms f
       where f.id = form_id and f.user_id = auth.uid()
     )
@@ -484,7 +505,8 @@ create policy "entries_delete"
   on public.opcr_entries for delete
   to authenticated
   using (
-    exists (
+    public.is_admin()
+    or exists (
       select 1 from public.opcr_forms f
       where f.id = form_id
         and f.user_id = auth.uid()
@@ -498,7 +520,7 @@ create table if not exists public.opcr_tallies (
   staff_id uuid not null references public.office_staff(id) on delete cascade,
   user_id uuid references public.profiles(id) on delete set null,
   item_id uuid not null references public.opcr_items(id) on delete cascade,
-  semester text not null check (semester in ('jan_june', 'july_dec')),
+  semester text not null check (semester in ('jan_dec')),
   target numeric(12, 2) not null default 0,
   accomplished numeric(12, 2) not null default 0,
   updated_at timestamptz not null default now(),
@@ -556,6 +578,11 @@ returns trigger
 language plpgsql
 as $$
 begin
+  if coalesce(current_setting('opcr.internal_sync', true), '') = 'on' then
+    new.updated_at := now();
+    return new;
+  end if;
+
   if not public.is_admin() then
     new.staff_id := public.my_staff_id();
     new.user_id := auth.uid();
@@ -628,7 +655,8 @@ grant execute on function public.delete_unused_opcr_item(uuid) to authenticated;
 -- Existing projects: also run supabase/audit.sql once for the Audit logs page.
 -- Existing projects: run supabase/opcr_editable.sql so staff can edit OPCR rows.
 -- Existing projects: run supabase/daily.sql for the Daily log page.
--- Existing projects: run supabase/opcr_tally_sync.sql so OPCR add/remove rows update the tally.
+-- Existing projects: run supabase/tally_annual.sql to use one Jan–Dec column on the tally board.
+-- If staff saves fail with opcr_tallies_semester_check, run supabase/fix_tally_semester.sql instead.
 
 alter table public.opcr_tallies replica identity full;
 
@@ -725,11 +753,7 @@ returns text
 language sql
 immutable
 as $$
-  select case
-    when p_date is null then 'jan_june'
-    when extract(month from p_date) <= 6 then 'jan_june'
-    else 'july_dec'
-  end;
+  select 'jan_dec';
 $$;
 
 create table if not exists public.opcr_daily_logs (
@@ -775,8 +799,9 @@ begin
   from public.opcr_daily_logs
   where period_id = p_period_id
     and staff_id = p_staff_id
-    and item_id = p_item_id
-    and public.tally_semester(work_date) = p_semester;
+    and item_id = p_item_id;
+
+  perform set_config('opcr.internal_sync', 'on', true);
 
   insert into public.opcr_tallies (
     period_id, staff_id, user_id, item_id, semester, target, accomplished
@@ -786,7 +811,7 @@ begin
     p_staff_id,
     p_user_id,
     p_item_id,
-    p_semester,
+    'jan_dec',
     0,
     v_sum
   )
@@ -795,6 +820,12 @@ begin
     accomplished = excluded.accomplished,
     user_id = coalesce(public.opcr_tallies.user_id, excluded.user_id),
     updated_at = now();
+
+  perform set_config('opcr.internal_sync', 'off', true);
+exception
+  when others then
+    perform set_config('opcr.internal_sync', 'off', true);
+    raise;
 end;
 $$;
 
@@ -807,19 +838,23 @@ as $$
 begin
   if tg_op = 'DELETE' then
     perform public.apply_daily_sum(
-      old.period_id, old.staff_id, old.user_id, old.item_id, public.tally_semester(old.work_date)
+      old.period_id, old.staff_id, old.user_id, old.item_id, 'jan_dec'
     );
     return old;
   end if;
 
-  if tg_op = 'UPDATE' then
+  if tg_op = 'UPDATE' and (
+    old.quantity is distinct from new.quantity
+    or old.work_date is distinct from new.work_date
+    or old.item_id is distinct from new.item_id
+  ) then
     perform public.apply_daily_sum(
-      old.period_id, old.staff_id, old.user_id, old.item_id, public.tally_semester(old.work_date)
+      old.period_id, old.staff_id, old.user_id, old.item_id, 'jan_dec'
     );
   end if;
 
   perform public.apply_daily_sum(
-    new.period_id, new.staff_id, new.user_id, new.item_id, public.tally_semester(new.work_date)
+    new.period_id, new.staff_id, new.user_id, new.item_id, 'jan_dec'
   );
   return new;
 end;

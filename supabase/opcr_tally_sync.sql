@@ -64,6 +64,12 @@ begin
     return;
   end if;
 
+  delete from public.opcr_daily_logs
+  where item_id = p_item_id;
+
+  delete from public.opcr_tallies
+  where item_id = p_item_id;
+
   delete from public.opcr_items
   where id = p_item_id
     and origin = 'opcr';

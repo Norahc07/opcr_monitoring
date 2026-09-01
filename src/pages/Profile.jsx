@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, ImagePlus, X } from 'lucide-react'
+import { Camera, ImagePlus, Lock, Pencil, UserRound, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
@@ -7,18 +7,34 @@ import CropPhotoModal from '../components/CropPhotoModal'
 import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
 
 export default function Profile() {
-  const { user, profile, isAdmin, refreshProfile, loading: authLoading } = useAuth()
+  const { user, profile, isAdmin, refreshProfile, updateProfile, updatePassword, loading: authLoading } =
+    useAuth()
   const { toast, toastPhase, showToast, clearToast } = useToast()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
   const [cropSrc, setCropSrc] = useState('')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [shortName, setShortName] = useState('')
+  const [position, setPosition] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
   const fileRef = useRef(null)
   const videoRef = useRef(null)
   const streamRef = useRef(null)
 
   const displayName = profile?.full_name || user?.email || 'OPCR user'
+
+  useEffect(() => {
+    if (!profile) return
+    setFullName(profile.full_name || '')
+    setShortName(profile.short_name || '')
+    setPosition(profile.position || '')
+  }, [profile])
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -39,6 +55,70 @@ export default function Profile() {
     clearToast()
     if (cropSrc.startsWith('blob:')) URL.revokeObjectURL(cropSrc)
     setCropSrc(URL.createObjectURL(file))
+  }
+
+  function startEditProfile() {
+    setFullName(profile?.full_name || '')
+    setShortName(profile?.short_name || '')
+    setPosition(profile?.position || '')
+    setEditingProfile(true)
+    setError('')
+    clearToast()
+  }
+
+  function cancelEditProfile() {
+    setFullName(profile?.full_name || '')
+    setShortName(profile?.short_name || '')
+    setPosition(profile?.position || '')
+    setEditingProfile(false)
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true)
+    setError('')
+    clearToast()
+    try {
+      await updateProfile({
+        fullName,
+        shortName,
+        position,
+      })
+      setEditingProfile(false)
+      await writeAudit(supabase, 'Updated profile', 'Profile', fullName.trim())
+      showToast('Profile updated.')
+    } catch (err) {
+      setError(err.message || 'Could not save profile.')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  async function savePassword(event) {
+    event.preventDefault()
+    setError('')
+    clearToast()
+
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match.')
+      return
+    }
+
+    setSavingPassword(true)
+    try {
+      await updatePassword(newPassword)
+      setNewPassword('')
+      setConfirmPassword('')
+      await writeAudit(supabase, 'Changed password', 'Profile')
+      showToast('Password updated.')
+    } catch (err) {
+      setError(err.message || 'Could not update password.')
+    } finally {
+      setSavingPassword(false)
+    }
   }
 
   useEffect(() => {
@@ -153,7 +233,7 @@ export default function Profile() {
       <PageHeader
         kicker="Account"
         title="Profile"
-        description="Your account name stays locked in the header. Update your photo here."
+        description="Update your photo, account details, and password."
       />
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -166,25 +246,6 @@ export default function Profile() {
             <p className="text-sm text-slate-500 italic">{profile?.position || 'No position set'}</p>
           </div>
         </div>
-
-        <dl className="mt-6 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Email</dt>
-            <dd className="mt-1 text-slate-800">{user?.email || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Role</dt>
-            <dd className="mt-1 text-slate-800">{isAdmin ? 'Admin / Head' : 'Staff'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Office</dt>
-            <dd className="mt-1 text-slate-800">{profile?.office || 'E-Learning Ville'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Short name</dt>
-            <dd className="mt-1 text-slate-800">{profile?.short_name || '—'}</dd>
-          </div>
-        </dl>
 
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <input
@@ -216,6 +277,131 @@ export default function Profile() {
         <p className="mt-3 text-center text-xs text-slate-500">
           After you upload or capture, align your face in the 2×2 square before saving.
         </p>
+      </section>
+
+      <section className="card p-6 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+              <UserRound size={18} />
+              Edit profile
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">Update your name and position shown in the app.</p>
+          </div>
+          {!editingProfile ? (
+            <Button variant="secondary" onClick={startEditProfile}>
+              <Pencil size={16} />
+              Edit
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="ghost" disabled={savingProfile} onClick={cancelEditProfile}>
+                Cancel
+              </Button>
+              <Button disabled={savingProfile} onClick={saveProfile}>
+                {savingProfile ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {editingProfile ? (
+          <form className="mt-5 space-y-4" onSubmit={(event) => event.preventDefault()}>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">Full name</span>
+              <input
+                className="field"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                placeholder="Your full name"
+                autoComplete="name"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">Short name</span>
+              <input
+                className="field"
+                value={shortName}
+                onChange={(event) => setShortName(event.target.value)}
+                placeholder="Name shown on tally columns"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">Position</span>
+              <input
+                className="field"
+                value={position}
+                onChange={(event) => setPosition(event.target.value)}
+                placeholder="Your position or title"
+              />
+            </label>
+          </form>
+        ) : (
+          <dl className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Email</dt>
+              <dd className="mt-1 text-slate-800">{user?.email || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Role</dt>
+              <dd className="mt-1 text-slate-800">{isAdmin ? 'Admin / Head' : 'Staff'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Full name</dt>
+              <dd className="mt-1 text-slate-800">{profile?.full_name || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Short name</dt>
+              <dd className="mt-1 text-slate-800">{profile?.short_name || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Position</dt>
+              <dd className="mt-1 text-slate-800">{profile?.position || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Office</dt>
+              <dd className="mt-1 text-slate-800">{profile?.office || 'E-Learning Ville'}</dd>
+            </div>
+          </dl>
+        )}
+      </section>
+
+      <section className="card p-6 sm:p-8">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <Lock size={18} />
+          Change password
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">Use at least 8 characters for your new password.</p>
+
+        <form className="mt-5 space-y-4" onSubmit={savePassword}>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">New password</span>
+            <input
+              type="password"
+              className="field"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Confirm new password</span>
+            <input
+              type="password"
+              className="field"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Re-enter your new password"
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </label>
+          <Button type="submit" disabled={savingPassword || !newPassword || !confirmPassword}>
+            {savingPassword ? 'Updating…' : 'Update password'}
+          </Button>
+        </form>
       </section>
 
       {cameraOpen && (

@@ -250,6 +250,37 @@ begin
 end;
 $$;
 
+create or replace function public.admin_reset_password(
+  p_user_id uuid,
+  p_password text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, auth
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can reset passwords';
+  end if;
+  if p_user_id is null then
+    raise exception 'User is required';
+  end if;
+  if p_password is null or length(p_password) < 6 then
+    raise exception 'Password must be at least 6 characters';
+  end if;
+  if not exists (select 1 from auth.users where id = p_user_id) then
+    raise exception 'User not found';
+  end if;
+
+  update auth.users
+  set
+    encrypted_password = crypt(p_password, gen_salt('bf')),
+    updated_at = now()
+  where id = p_user_id;
+end;
+$$;
+
 create or replace function public.admin_delete_login(p_user_id uuid)
 returns void
 language plpgsql
@@ -275,8 +306,10 @@ $$;
 
 revoke all on function public.admin_list_logins() from public;
 revoke all on function public.admin_create_login(text, text, text, text, text, text, text) from public;
+revoke all on function public.admin_reset_password(uuid, text) from public;
 revoke all on function public.admin_delete_login(uuid) from public;
 
 grant execute on function public.admin_list_logins() to authenticated;
 grant execute on function public.admin_create_login(text, text, text, text, text, text, text) to authenticated;
+grant execute on function public.admin_reset_password(uuid, text) to authenticated;
 grant execute on function public.admin_delete_login(uuid) to authenticated;
