@@ -40,8 +40,9 @@ export function Avatar({ name, src = '', size = 'md' }) {
     sm: 'h-8 w-8 text-[11px]',
     md: 'h-9 w-9 text-xs',
     lg: 'h-24 w-24 text-2xl',
+    xl: 'h-[7.25rem] w-[7.25rem] text-3xl',
   }
-  const iconSizes = { sm: 16, md: 18, lg: 42 }
+  const iconSizes = { sm: 16, md: 18, lg: 42, xl: 52 }
   const box = `flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-teal-600 to-emerald-500 font-bold text-white ${sizes[size] || sizes.md}`
   if (src) {
     return <img src={src} alt={name || 'Profile'} className={`${box} object-cover`} />

@@ -42,15 +42,11 @@ const TONE_TEXT = {
 }
 
 function StaffHeader({ person }) {
-  const { primary, secondary } = personTableHeader(person)
+  const { primary, secondary, title } = personTableHeader(person)
   return (
-    <div className="tally-staff-head px-1 py-1">
-      <p className="tally-staff-primary text-sm font-bold text-slate-900">{primary}</p>
-      {secondary && (
-        <p className="tally-staff-secondary mt-0.5 text-[10px] leading-tight text-slate-500">
-          {secondary}
-        </p>
-      )}
+    <div className="tally-staff-head" title={title}>
+      <p className="tally-staff-primary">{primary}</p>
+      {secondary ? <p className="tally-staff-secondary">{secondary}</p> : null}
     </div>
   )
 }
@@ -487,7 +483,7 @@ export default function TallyBoard() {
                   {tablePeople.map((person) => (
                     <th
                       key={person.id}
-                      className={`tally-col-staff border-l border-slate-200 px-2 py-2 text-center align-bottom ${
+                      className={`tally-col-staff border-l border-slate-200 px-1.5 py-2 text-center align-top ${
                         person.id === myStaffId ? 'bg-teal-50' : ''
                       }`}
                     >

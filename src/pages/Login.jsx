@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Lock, Mail } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
+import InstallAppButton from '../components/InstallAppButton'
 import { Alert, BrandLogo, Button } from '../components/ui'
 
 export default function Login() {
@@ -141,6 +142,8 @@ export default function Login() {
               </Button>
             </form>
           )}
+
+          {mode === 'login' && <InstallAppButton />}
 
           {mode === 'login' && (
             <p className="mt-4 text-center">

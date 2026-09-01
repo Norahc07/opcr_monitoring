@@ -52,14 +52,39 @@ export function personLabel(profile) {
   return profile.short_name || profile.full_name || 'Staff'
 }
 
+function toTitleCaseName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function friendlyShortName(shortRaw, fullName) {
+  const short = String(shortRaw || '').trim()
+  const full = String(fullName || '').trim()
+  const firstName = full.split(/\s+/)[0] || ''
+
+  if (short && !/[\s._-]/.test(short) && short.length > 10 && firstName) {
+    return toTitleCaseName(firstName)
+  }
+  if (!short) return firstName ? toTitleCaseName(firstName) : full || 'Staff'
+  if (short.length <= 3 && short === short.toUpperCase()) return short
+  if (short === short.toUpperCase() && /[A-Z]/.test(short)) return toTitleCaseName(short)
+  return short
+}
+
 export function personTableHeader(profile) {
-  const short = profile?.short_name?.trim()
-  const full = profile?.full_name?.trim()
-  const position = profile?.position?.trim()
-  const primary = short || full || 'Staff'
-  const nameLine = full && short && short.toUpperCase() !== full.toUpperCase() ? full : ''
-  const secondary = [nameLine, position].filter(Boolean).join(' · ')
-  return { primary, secondary }
+  const short = profile?.short_name?.trim() || ''
+  const full = profile?.full_name?.trim() || ''
+  const position = profile?.position?.trim() || ''
+  const primary = friendlyShortName(short, full)
+  const secondary =
+    full && full.toUpperCase() !== primary.toUpperCase() ? full : ''
+  const title = [full || primary, position].filter(Boolean).join(' · ')
+  return { primary, secondary, title }
 }
 
 export async function getLinkedStaff(supabase, userId) {

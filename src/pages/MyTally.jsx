@@ -244,8 +244,9 @@ export default function MyTally() {
         </Alert>
       )}
 
-      {grouped.map((group) => (
-        <section key={group.category} className="card overflow-hidden">
+      <div className="function-split-grid">
+        {grouped.map((group) => (
+          <section key={group.category} className="card overflow-hidden">
           <div className="border-b border-amber-200 bg-amber-100 px-4 py-2.5">
             <h2 className="text-sm font-bold tracking-wide text-amber-950 uppercase">
               {group.category}
@@ -255,21 +256,21 @@ export default function MyTally() {
             <table className="tally-table w-full text-left text-sm">
               <colgroup>
                 <col className="tally-col-output" />
-                <col className="tally-col-num" />
-                <col className="tally-col-num" />
-                <col className="tally-col-num" />
+                <col className="tally-col-target" />
+                <col className="tally-col-done" />
+                <col className="tally-col-progress" />
               </colgroup>
               <thead>
-                <tr className="bg-slate-100 text-sm tracking-wide text-slate-600 uppercase">
-                  <th className="tally-col-output px-4 py-2 font-semibold">Output</th>
-                  <th className="tally-col-num border-l border-slate-200 px-2 py-2 text-center font-semibold">
+                <tr className="bg-slate-100 text-[11px] text-slate-600 uppercase">
+                  <th className="px-3 py-2 font-semibold">Output</th>
+                  <th className="border-l border-slate-200 px-1.5 py-2 text-center font-semibold">
                     Target
                   </th>
-                  <th className="tally-col-num border-l border-slate-200 bg-teal-50 px-2 py-2 text-center font-semibold text-teal-900">
-                    Accomplished
+                  <th className="border-l border-slate-200 bg-teal-50 px-1.5 py-2 text-center font-semibold text-teal-900">
+                    Actual
                   </th>
-                  <th className="tally-col-num border-l border-slate-200 px-2 py-2 text-center font-semibold">
-                    Progress
+                  <th className="border-l border-slate-200 px-1.5 py-2 text-center font-semibold">
+                    %
                   </th>
                 </tr>
               </thead>
@@ -282,31 +283,24 @@ export default function MyTally() {
                   const tone = statusTone(accomplished, target)
                   const zero = toCount(accomplished) <= 0
                   return (
-                    <tr key={item.id} className="bg-slate-50/40">
-                      <td className="px-4 py-3">
+                    <tr key={item.id} className="border-t border-slate-100 bg-white">
+                      <td className="px-3 py-2.5">
                         <p className="font-semibold text-slate-900">{item.output}</p>
-                        <p className="tally-output-period mt-0.5 text-xs font-medium text-slate-600">
-                          {annualPeriodLabel(year)}
-                        </p>
                       </td>
-                      <td className="border-l border-white/60 px-2 py-3 text-center text-base font-bold text-slate-700">
+                      <td className="border-l border-slate-100 px-1.5 py-2.5 text-center text-base font-bold text-slate-700">
                         {formatCount(target)}
-                        {toCount(target) <= 0 && (
-                          <p className="mt-0.5 text-[10px] font-semibold text-slate-500">Not assigned</p>
-                        )}
                       </td>
-                      <td className="border-l border-white/60 bg-teal-50/80 px-2 py-3 text-center">
+                      <td className="border-l border-slate-100 bg-teal-50/80 px-1.5 py-2.5 text-center">
                         <p
-                          className={`text-lg font-bold ${
+                          className={`text-base font-bold ${
                             zero && tone === 'neutral' ? 'text-slate-400' : TONE_TEXT[tone]
                           }`}
                         >
                           {formatCount(accomplished)}
                         </p>
-                        <p className="mt-0.5 text-[10px] font-semibold text-slate-500">From Daily log</p>
                       </td>
-                      <td className={`border-l border-white/60 px-2 py-3 text-center text-sm font-semibold ${TONE_TEXT[tone]}`}>
-                        {percent == null ? '—' : `${formatCount(accomplished || 0)} / ${formatCount(target)} · ${percent}%`}
+                      <td className={`border-l border-slate-100 px-1.5 py-2.5 text-center text-sm font-semibold ${TONE_TEXT[tone]}`}>
+                        {percent == null ? '—' : `${percent}%`}
                       </td>
                     </tr>
                   )
@@ -315,7 +309,8 @@ export default function MyTally() {
             </table>
           </div>
         </section>
-      ))}
+        ))}
+      </div>
 
       {visibleItems.length === 0 && (
         <EmptyState

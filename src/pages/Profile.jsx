@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, ImagePlus, Lock, Pencil, UserRound, X } from 'lucide-react'
+import { Camera, Check, ImagePlus, KeyRound, Pencil, Save, UserRound, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import CropPhotoModal from '../components/CropPhotoModal'
-import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
+import { Alert, Avatar, Button, LoadingState, Toast, useToast } from '../components/ui'
 
 export default function Profile() {
   const { user, profile, isAdmin, refreshProfile, updateProfile, updatePassword, loading: authLoading } =
@@ -229,180 +229,205 @@ export default function Profile() {
   if (authLoading) return <LoadingState label="Loading profile…" />
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-5">
-      <PageHeader
-        kicker="Account"
-        title="Profile"
-        description="Update your photo, account details, and password."
-      />
+    <div className="profile-page space-y-4">
+      <div>
+        <p className="text-xs font-semibold tracking-[0.18em] text-teal-700 uppercase">Account</p>
+        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-slate-900">Profile</h1>
+      </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      <section className="card p-6 sm:p-8">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <Avatar name={profile?.full_name || ''} src={profile?.avatar_url || ''} size="lg" />
-          <div>
-            <p className="text-lg font-bold text-slate-900">{displayName}</p>
-            <p className="text-sm text-slate-500 italic">{profile?.position || 'No position set'}</p>
+      <div className="grid items-stretch gap-4 lg:grid-cols-[18.5rem_minmax(0,1fr)]">
+        <section className="card flex h-full flex-col overflow-hidden">
+          <div className="h-20 shrink-0 bg-gradient-to-br from-teal-800 via-teal-600 to-emerald-500" />
+          <div className="flex flex-1 flex-col items-center px-4 pb-4">
+            <div className="-mt-11 rounded-full bg-white p-1 shadow-md ring-4 ring-white">
+              <Avatar name={profile?.full_name || ''} src={profile?.avatar_url || ''} size="lg" />
+            </div>
+            <p className="mt-2.5 text-center text-base font-bold tracking-tight text-slate-900">
+              {displayName}
+            </p>
+            <p className="text-sm text-slate-500">{profile?.position || 'No position set'}</p>
+            <p className="mt-2 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
+              {isAdmin ? 'Admin' : 'Staff'} · {profile?.office || 'E-Learning Ville'}
+            </p>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                openCrop(event.target.files?.[0])
+                event.target.value = ''
+              }}
+            />
+            <div className="mt-auto w-full pt-6">
+              <div className="grid w-full grid-cols-2 gap-2">
+                <Button
+                  variant="secondary"
+                  className="w-full px-3"
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <ImagePlus size={16} />
+                  Upload
+                </Button>
+                <Button
+                  className="w-full px-3"
+                  disabled={uploading}
+                  onClick={() => {
+                    setError('')
+                    clearToast()
+                    setCameraOpen(true)
+                  }}
+                >
+                  <Camera size={16} />
+                  Camera
+                </Button>
+              </div>
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Crop to a square after you pick a photo.
+              </p>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              openCrop(event.target.files?.[0])
-              event.target.value = ''
-            }}
-          />
-          <Button variant="secondary" disabled={uploading} onClick={() => fileRef.current?.click()}>
-            <ImagePlus size={16} />
-            Upload photo
-          </Button>
-          <Button
-            disabled={uploading}
-            onClick={() => {
-              setError('')
-              clearToast()
-              setCameraOpen(true)
-            }}
-          >
-            <Camera size={16} />
-            Take picture
-          </Button>
-        </div>
-        <p className="mt-3 text-center text-xs text-slate-500">
-          After you upload or capture, align your face in the 2×2 square before saving.
-        </p>
-      </section>
+        <div className="space-y-4">
+          <section className="card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                  <UserRound size={18} className="text-teal-700" />
+                  Account details
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">Name and position shown on tally and OPCR.</p>
+              </div>
+              {!editingProfile ? (
+                <Button variant="secondary" onClick={startEditProfile}>
+                  <Pencil size={16} />
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button variant="ghost" disabled={savingProfile} onClick={cancelEditProfile}>
+                    <X size={16} />
+                    Cancel
+                  </Button>
+                  <Button disabled={savingProfile} onClick={saveProfile}>
+                    <Save size={16} />
+                    {savingProfile ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
+              )}
+            </div>
 
-      <section className="card p-6 sm:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-              <UserRound size={18} />
-              Edit profile
+            {editingProfile ? (
+              <form className="mt-4 grid grid-cols-3 gap-3" onSubmit={(event) => event.preventDefault()}>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Full name
+                  </span>
+                  <input
+                    className="field"
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    placeholder="Your full name"
+                    autoComplete="name"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Short name
+                  </span>
+                  <input
+                    className="field"
+                    value={shortName}
+                    onChange={(event) => setShortName(event.target.value)}
+                    placeholder="Tally nickname"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    Position
+                  </span>
+                  <input
+                    className="field"
+                    value={position}
+                    onChange={(event) => setPosition(event.target.value)}
+                    placeholder="Your title"
+                  />
+                </label>
+              </form>
+            ) : (
+              <dl className="mt-4 grid grid-cols-3 gap-2.5">
+                {[
+                  ['Email', user?.email || '—'],
+                  ['Role', isAdmin ? 'Admin / Head' : 'Staff'],
+                  ['Office', profile?.office || 'E-Learning Ville'],
+                  ['Full name', profile?.full_name || '—'],
+                  ['Short name', profile?.short_name || '—'],
+                  ['Position', profile?.position || '—'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-slate-50 px-3 py-2.5">
+                    <dt className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      {label}
+                    </dt>
+                    <dd className="mt-0.5 truncate text-sm font-medium text-slate-800" title={value}>
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </section>
+
+          <section className="card p-5">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+              <KeyRound size={18} className="text-teal-700" />
+              Change password
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Update your name and position shown in the app.</p>
-          </div>
-          {!editingProfile ? (
-            <Button variant="secondary" onClick={startEditProfile}>
-              <Pencil size={16} />
-              Edit
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="ghost" disabled={savingProfile} onClick={cancelEditProfile}>
-                Cancel
+            <form className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3" onSubmit={savePassword}>
+              <label className="block min-w-0">
+                <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  New password
+                </span>
+                <input
+                  type="password"
+                  className="field"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  minLength={8}
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className="mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                  Confirm password
+                </span>
+                <input
+                  type="password"
+                  className="field"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Re-enter password"
+                  autoComplete="new-password"
+                  minLength={8}
+                />
+              </label>
+              <Button
+                type="submit"
+                className="h-10"
+                disabled={savingPassword || !newPassword || !confirmPassword}
+              >
+                <Check size={16} />
+                {savingPassword ? 'Updating…' : 'Update'}
               </Button>
-              <Button disabled={savingProfile} onClick={saveProfile}>
-                {savingProfile ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
-          )}
+            </form>
+          </section>
         </div>
-
-        {editingProfile ? (
-          <form className="mt-5 space-y-4" onSubmit={(event) => event.preventDefault()}>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Full name</span>
-              <input
-                className="field"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                placeholder="Your full name"
-                autoComplete="name"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Short name</span>
-              <input
-                className="field"
-                value={shortName}
-                onChange={(event) => setShortName(event.target.value)}
-                placeholder="Name shown on tally columns"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Position</span>
-              <input
-                className="field"
-                value={position}
-                onChange={(event) => setPosition(event.target.value)}
-                placeholder="Your position or title"
-              />
-            </label>
-          </form>
-        ) : (
-          <dl className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Email</dt>
-              <dd className="mt-1 text-slate-800">{user?.email || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Role</dt>
-              <dd className="mt-1 text-slate-800">{isAdmin ? 'Admin / Head' : 'Staff'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Full name</dt>
-              <dd className="mt-1 text-slate-800">{profile?.full_name || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Short name</dt>
-              <dd className="mt-1 text-slate-800">{profile?.short_name || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Position</dt>
-              <dd className="mt-1 text-slate-800">{profile?.position || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Office</dt>
-              <dd className="mt-1 text-slate-800">{profile?.office || 'E-Learning Ville'}</dd>
-            </div>
-          </dl>
-        )}
-      </section>
-
-      <section className="card p-6 sm:p-8">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <Lock size={18} />
-          Change password
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">Use at least 8 characters for your new password.</p>
-
-        <form className="mt-5 space-y-4" onSubmit={savePassword}>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">New password</span>
-            <input
-              type="password"
-              className="field"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="At least 8 characters"
-              autoComplete="new-password"
-              minLength={8}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Confirm new password</span>
-            <input
-              type="password"
-              className="field"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              placeholder="Re-enter your new password"
-              autoComplete="new-password"
-              minLength={8}
-            />
-          </label>
-          <Button type="submit" disabled={savingPassword || !newPassword || !confirmPassword}>
-            {savingPassword ? 'Updating…' : 'Update password'}
-          </Button>
-        </form>
-      </section>
+      </div>
 
       {cameraOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -437,6 +462,7 @@ export default function Profile() {
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="secondary" onClick={stopCamera}>
+                <X size={16} />
                 Cancel
               </Button>
               <Button disabled={!cameraReady} onClick={capturePhoto}>

@@ -100,16 +100,75 @@ select {
   min-width: 0;
 }
 
+.function-split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 1rem;
+}
+
+.daily-log-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.daily-col-output {
+  width: 34%;
+}
+
+.daily-col-count,
+.daily-col-total {
+  width: 5.25rem;
+}
+
+.daily-col-note {
+  width: 10.5rem;
+}
+
+.daily-log-table th,
+.daily-log-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.daily-note-field {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.profile-page .field {
+  min-height: 2.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
 .my-tally .tally-table {
   table-layout: fixed;
+}
+
+.my-tally .tally-table th {
+  white-space: normal;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .my-tally .tally-col-output {
   width: auto;
 }
 
-.my-tally .tally-col-num {
-  width: 9.5rem;
+.my-tally .tally-col-target {
+  width: 4.75rem;
+}
+
+.my-tally .tally-col-done {
+  width: 6.75rem;
+}
+
+.my-tally .tally-col-progress {
+  width: 5.5rem;
 }
 
 .tally-board .tally-table {
@@ -125,7 +184,41 @@ select {
 }
 
 .tally-board .tally-col-staff {
-  width: 6.5rem;
+  width: 7.25rem;
+}
+
+.tally-board .tally-staff-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.15rem;
+  min-height: 2.85rem;
+}
+
+.tally-board .tally-staff-primary {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: #0f172a;
+}
+
+.tally-board .tally-staff-secondary {
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #64748b;
+  word-break: break-word;
 }
 
 .tally-board .tally-total-head {
