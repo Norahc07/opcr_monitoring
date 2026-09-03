@@ -10,7 +10,7 @@ insert into public.opcr_tallies (
 select
   period_id,
   staff_id,
-  max(user_id),
+  (array_agg(user_id) filter (where user_id is not null))[1],
   item_id,
   'jan_dec',
   coalesce(sum(target), 0),

@@ -73,10 +73,6 @@ select {
   color: #94a3b8;
 }
 
-.field-with-icon {
-  padding-left: 2.75rem;
-}
-
 .card {
   border-radius: 1.5rem;
   background: rgba(255, 255, 255, 0.92);
@@ -187,6 +183,42 @@ select {
   width: 7.25rem;
 }
 
+.tally-board .tally-staff-cell,
+.tally-board td.tally-col-total {
+  vertical-align: top;
+}
+
+.tally-board .tally-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  min-height: 3.35rem;
+}
+
+.tally-board .tally-cell-target {
+  margin: 0;
+  min-height: 1rem;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
+.tally-board .tally-cell > .field,
+.tally-board .tally-cell-readonly {
+  width: 5rem;
+  min-height: 2.125rem;
+  box-sizing: border-box;
+}
+
+.tally-board .tally-cell-readonly {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .tally-board .tally-staff-head {
   display: flex;
   flex-direction: column;
@@ -288,7 +320,76 @@ input.field[type='number']::-webkit-inner-spin-button {
 }
 
 .opcr-col-accountable {
-  width: 12%;
+  width: 14%;
+}
+
+.opcr-accountable,
+.opcr-accountable-list,
+.opcr-accountable-list li {
+  margin: 0;
+  padding: 0;
+}
+
+.opcr-accountable-list {
+  list-style: none;
+}
+
+.opcr-accountable-list li + li {
+  margin-top: 0.35em;
+}
+
+.opcr-accountable-extra {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.opcr-accountable-actions,
+.opcr-accountable-edit,
+.opcr-accountable-add {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.opcr-accountable-actions button,
+.opcr-accountable-edit button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  cursor: pointer;
+  padding: 0;
+}
+
+.opcr-accountable-add {
+  margin-top: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.opcr-accountable-add .field,
+.opcr-accountable-edit .field {
+  min-width: 0;
+  flex: 1;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.8125rem;
+}
+
+.opcr-accountable-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
 }
 
 .opcr-col-actual {
@@ -1182,6 +1283,23 @@ input.field[type='number']::-webkit-inner-spin-button {
 
   body.printing-tally .tally-board .tally-col-staff {
     width: auto !important;
+  }
+
+  body.printing-tally .tally-board .tally-cell {
+    min-height: 0;
+    gap: 0.06rem;
+  }
+
+  body.printing-tally .tally-board .tally-cell-target {
+    min-height: 0.48rem;
+    font-size: 0.4rem;
+    line-height: 0.48rem;
+  }
+
+  body.printing-tally .tally-board .tally-cell > .field,
+  body.printing-tally .tally-board .tally-cell-readonly {
+    width: 100%;
+    min-height: 0;
   }
 
   body.printing-tally .tally-board .min-w-\[100px\],

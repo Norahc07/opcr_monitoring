@@ -36,6 +36,7 @@ function initials(name) {
 }
 
 export function Avatar({ name, src = '', size = 'md' }) {
+  const [failed, setFailed] = useState(false)
   const sizes = {
     sm: 'h-8 w-8 text-[11px]',
     md: 'h-9 w-9 text-xs',
@@ -44,8 +45,20 @@ export function Avatar({ name, src = '', size = 'md' }) {
   }
   const iconSizes = { sm: 16, md: 18, lg: 42, xl: 52 }
   const box = `flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-teal-600 to-emerald-500 font-bold text-white ${sizes[size] || sizes.md}`
-  if (src) {
-    return <img src={src} alt={name || 'Profile'} className={`${box} object-cover`} />
+
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
+
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={name || 'Profile'}
+        className={`${box} object-cover`}
+        onError={() => setFailed(true)}
+      />
+    )
   }
   if (name) {
     return <div className={box}>{initials(name)}</div>

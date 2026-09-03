@@ -51,9 +51,19 @@ function StaffHeader({ person }) {
   )
 }
 
+function TallyTargetLine({ show, target, toneClass }) {
+  if (!show) return null
+  const hasTarget = toCount(target) > 0
+  return (
+    <p className={`tally-cell-target ${hasTarget ? toneClass : 'invisible'}`}>
+      Target {formatCount(target)}
+    </p>
+  )
+}
+
 export default function TallyBoard() {
   const { user, isAdmin } = useAuth()
-  const { toast, toastPhase, showToast, clearToast } = useToast()
+  const { toast, toastPhase, toastTone, showToast } = useToast()
   const cached = useMemo(() => readBoardCache(), [])
   const [period, setPeriod] = useState(cached?.period || null)
   const [items, setItems] = useState(cached?.items || [])
@@ -64,8 +74,10 @@ export default function TallyBoard() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState({})
-  const [liveNotice, setLiveNotice] = useState('')
   const dirtyRef = useRef({})
+  const recentlySavedRef = useRef(new Set())
+  const applyTallyChangeRef = useRef(null)
+  const showToastRef = useRef(showToast)
   const rowsRef = useRef({})
   const saveTimer = useRef(null)
   const isAdminRef = useRef(isAdmin)
@@ -129,7 +141,7 @@ export default function TallyBoard() {
         (payload) => {
           const tally = payload.new
           if (!tally?.item_id || !tally?.semester) return
-          applyTallyChange(tally, { notice: 'Updated from a staff save.' })
+          applyTallyChangeRef.current?.(tally, { notice: 'Updated from a staff save.' })
         },
       )
       .subscribe()
@@ -149,8 +161,8 @@ export default function TallyBoard() {
     const personId = tally.staff_id || tally.user_id
     if (!personId || !tally.item_id) return
     const key = tallyKey(personId, tally.item_id, TALLY_PERIOD_ID)
-    const keepLocalTarget = isTargetView && Boolean(dirtyRef.current[key])
-    const keepLocalAccomplished = !isTargetView && Boolean(dirtyRef.current[key])
+    const keepLocalTarget = isTargetViewRef.current && Boolean(dirtyRef.current[key])
+    const keepLocalAccomplished = !isTargetViewRef.current && Boolean(dirtyRef.current[key])
     setRows((current) => {
       const existing = current[key] || {
         staff_id: personId,
@@ -172,11 +184,17 @@ export default function TallyBoard() {
       return { ...current, [key]: next }
     })
     patchBoardCacheRow(tally)
-    if (options.notice) {
-      setLiveNotice(options.notice)
-      window.setTimeout(() => setLiveNotice(''), 2500)
+    if (
+      options.notice &&
+      !dirtyRef.current[key] &&
+      !recentlySavedRef.current.has(key)
+    ) {
+      showToastRef.current(options.notice)
     }
   }
+
+  applyTallyChangeRef.current = applyTallyChange
+  showToastRef.current = showToast
 
   async function loadData({ silent = false } = {}) {
     if (!silent) setLoading(true)
@@ -226,21 +244,27 @@ export default function TallyBoard() {
     if (!canEditCell(personId)) return
     const key = tallyKey(personId, itemId, TALLY_PERIOD_ID)
     const person = people.find((row) => row.id === personId)
-    setRows((current) => ({
-      ...current,
-      [key]: {
-        ...(current[key] || {
-          staff_id: personId,
-          user_id: person?.user_id || user?.id || null,
-          item_id: itemId,
-          semester: TALLY_PERIOD_ID,
-          target: '',
-          accomplished: '',
-        }),
-        [field]: value,
-      },
-    }))
+    const existing = rowsRef.current[key] || {
+      staff_id: personId,
+      user_id: person?.user_id || user?.id || null,
+      item_id: itemId,
+      semester: TALLY_PERIOD_ID,
+      target: '',
+      accomplished: '',
+    }
+    const nextRow = { ...existing, [field]: value }
+    const nextRows = { ...rowsRef.current, [key]: nextRow }
+    rowsRef.current = nextRows
+    setRows(nextRows)
     setDirty((current) => ({ ...current, [key]: true }))
+    if (period && items.length && people.length) {
+      writeBoardCache({
+        period,
+        items,
+        people,
+        rows: nextRows,
+      })
+    }
     scheduleAutoSave()
   }
 
@@ -299,10 +323,15 @@ export default function TallyBoard() {
       }
 
       const remaining = { ...dirtyRef.current }
-      for (const row of payload) {
-        delete remaining[tallyKey(row.staff_id, row.item_id, row.semester)]
+      const savedKeys = payload.map((row) => tallyKey(row.staff_id, row.item_id, row.semester))
+      for (const key of savedKeys) {
+        delete remaining[key]
+        recentlySavedRef.current.add(key)
       }
       setDirty(remaining)
+      window.setTimeout(() => {
+        for (const key of savedKeys) recentlySavedRef.current.delete(key)
+      }, 2500)
       writeBoardCache({
         period: activePeriod,
         items,
@@ -381,12 +410,6 @@ export default function TallyBoard() {
               <Printer size={16} />
               Print
             </Button>
-            {liveNotice && (
-              <span className="text-xs font-medium text-teal-700">{liveNotice}</span>
-            )}
-            {saving && (
-              <span className="text-xs font-medium text-slate-500">Saving…</span>
-            )}
           </div>
         }
       />
@@ -523,12 +546,12 @@ export default function TallyBoard() {
                         return (
                           <td
                             key={person.id}
-                            className={`border-l border-white/60 px-2 py-2 text-center ${
+                            className={`tally-staff-cell border-l border-white/60 px-2 py-2 text-center ${
                               person.id === myStaffId ? 'bg-teal-50/80' : ''
                             }`}
                           >
-                            {editable ? (
-                              <div>
+                            <div className="tally-cell">
+                              {editable ? (
                                 <input
                                   type="number"
                                   min="0"
@@ -544,16 +567,9 @@ export default function TallyBoard() {
                                     isTargetView ? 'target' : 'accomplished'
                                   }`}
                                 />
-                                {!isTargetView && toCount(targetValue) > 0 && (
-                                  <p className={`mt-1 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
-                                    Target {formatCount(targetValue)}
-                                  </p>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="rounded-lg bg-white/70 px-2 py-2">
+                              ) : (
                                 <p
-                                  className={`text-base font-bold ${
+                                  className={`tally-cell-readonly rounded-lg bg-white/70 px-2 py-1.5 text-base font-bold ${
                                     zero && tone === 'neutral'
                                       ? 'text-slate-400'
                                       : TONE_TEXT[tone]
@@ -561,25 +577,29 @@ export default function TallyBoard() {
                                 >
                                   {display}
                                 </p>
-                                {!isTargetView && toCount(targetValue) > 0 && (
-                                  <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[tone]}`}>
-                                    Target {formatCount(targetValue)}
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                              )}
+                              <TallyTargetLine
+                                show={!isTargetView}
+                                target={targetValue}
+                                toneClass={TONE_TEXT[tone]}
+                              />
+                            </div>
                           </td>
                         )
                       })}
-                      <td className="tally-col-total border-l border-slate-200 bg-teal-50/80 px-2 py-3 text-center text-lg font-bold">
-                        <span className={isTargetView ? 'text-teal-900' : TONE_TEXT[totalTone]}>
-                          {formatCount(total)}
-                        </span>
-                        {!isTargetView && toCount(itemTarget) > 0 && (
-                          <p className={`mt-0.5 text-[10px] font-semibold ${TONE_TEXT[totalTone]}`}>
-                            Target {formatCount(itemTarget)}
-                          </p>
-                        )}
+                      <td className="tally-col-total border-l border-slate-200 bg-teal-50/80 px-2 py-2 text-center">
+                        <div className="tally-cell">
+                          <span
+                            className={`text-lg font-bold ${isTargetView ? 'text-teal-900' : TONE_TEXT[totalTone]}`}
+                          >
+                            {formatCount(total)}
+                          </span>
+                          <TallyTargetLine
+                            show={!isTargetView}
+                            target={itemTarget}
+                            toneClass={TONE_TEXT[totalTone]}
+                          />
+                        </div>
                       </td>
                     </tr>
                   )
@@ -590,7 +610,7 @@ export default function TallyBoard() {
         </section>
       ))}
 
-      <Toast message={toast} phase={toastPhase} />
+      <Toast message={toast} phase={toastPhase} tone={toastTone} />
     </div>
   )
 }

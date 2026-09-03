@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
@@ -7,7 +7,6 @@ import { groupItemsBySection, sectionLabel } from '../lib/coreFunctions'
 import { formatCount, toCount } from '../lib/opcr'
 import {
   formatWorkDate,
-  groupDailyHistory,
   loadDailyContext,
   logsForDate,
   readDailyCache,
@@ -33,7 +32,6 @@ export default function DailyLog() {
   const [loading, setLoading] = useState(!initialCache)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [expandedDays, setExpandedDays] = useState({})
   const userRef = useRef(user)
 
   useEffect(() => {
@@ -124,7 +122,6 @@ export default function DailyLog() {
       .filter((group) => group.items.length > 0)
   }, [items])
 
-  const history = useMemo(() => groupDailyHistory(logs, items).slice(0, 14), [logs, items])
   const logByItem = useMemo(() => {
     const map = {}
     for (const row of logsForDate(logs, workDate)) map[row.item_id] = row
@@ -335,80 +332,6 @@ export default function DailyLog() {
           </section>
         ))}
       </div>
-
-      <section className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-bold text-slate-900">Recent days</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Click a day to expand its counts. Click again to collapse. That day also opens above so you
-            can edit it.
-          </p>
-        </div>
-        {history.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-500">
-            Nothing saved yet. Enter counts above and click Save day.
-          </p>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {history.map((day) => {
-              const expanded = Boolean(expandedDays[day.date])
-              const countLabel = day.rows.length === 1 ? '1 item' : `${day.rows.length} items`
-              return (
-                <button
-                  key={day.date}
-                  type="button"
-                  onClick={() => {
-                    setWorkDate(day.date)
-                    setExpandedDays((current) => ({
-                      ...current,
-                      [day.date]: !current[day.date],
-                    }))
-                  }}
-                  className={`w-full px-5 py-3.5 text-left hover:bg-slate-50 ${
-                    day.date === workDate ? 'bg-teal-50' : ''
-                  }`}
-                  aria-expanded={expanded}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-900">{formatWorkDate(day.date)}</p>
-                      {!expanded && (
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {day.rows.length ? countLabel : 'No counts'}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <p className="text-sm font-bold text-teal-800">{formatCount(day.total)}</p>
-                      <ChevronDown
-                        size={18}
-                        className={`text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                      />
-                    </div>
-                  </div>
-                  {expanded && (
-                    <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                      {day.rows.length === 0 ? (
-                        <li className="text-sm text-slate-500">No counts</li>
-                      ) : (
-                        day.rows.map((row) => (
-                          <li
-                            key={`${day.date}-${row.item_id || row.label}`}
-                            className="flex items-start justify-between gap-4 text-sm"
-                          >
-                            <span className="min-w-0 text-slate-700">{row.label}</span>
-                            <span className="shrink-0 font-semibold text-slate-900">{row.display}</span>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </section>
 
       <Toast message={toast} phase={toastPhase} />
     </div>

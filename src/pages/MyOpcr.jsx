@@ -1,19 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { GripVertical, Pencil, Plus, Printer, Trash2 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { Check, GripVertical, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { Alert, Button, LoadingState, Toast, useToast } from '../components/ui'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import {
+  alignedMapFromBoardCache,
+  alignedNamesForEntry,
+  buildAlignedAccountableMap,
   calcFinalAverage,
   ensureUserForm,
+  extraAccountableNames,
   formatAverage,
   formatDateDisplay,
   getActivePeriod,
   groupOpcrSectionEntries,
   isPrimaryOpcrEntry,
   isTempEntryId,
+  joinExtraAccountable,
+  loadTallyContext,
   readApprovedCache,
+  readBoardCache,
   readClosingCache,
   readHeaderCache,
   readMyOpcrCache,
@@ -137,6 +145,159 @@ function reorderEntries(entries, draggedId, toSection, beforeId) {
   return next
 }
 
+function extrasWithoutAligned(text, aligned) {
+  const folds = new Set((aligned || []).map((name) => String(name).toLowerCase()))
+  return extraAccountableNames(text).filter((name) => !folds.has(name.toLowerCase()))
+}
+
+function alignedMapHasNames(map) {
+  return Object.values(map || {}).some((names) => names?.length)
+}
+
+function mergeAlignedMaps(live, cached) {
+  const out = { ...(live || {}) }
+  for (const [key, names] of Object.entries(cached || {})) {
+    if (!names?.length) continue
+    if (!out[key]?.length) {
+      out[key] = names
+      continue
+    }
+    const seen = new Set(out[key].map((name) => String(name).toLowerCase()))
+    const next = [...out[key]]
+    for (const name of names) {
+      const fold = String(name).toLowerCase()
+      if (seen.has(fold)) continue
+      seen.add(fold)
+      next.push(name)
+    }
+    out[key] = next
+  }
+  return out
+}
+
+function AccountablePeople({ aligned = [], extrasText = '', editing, locked, onChangeExtras }) {
+  const extras = extrasWithoutAligned(extrasText, aligned)
+  const [draft, setDraft] = useState('')
+  const [editIndex, setEditIndex] = useState(null)
+  const [editValue, setEditValue] = useState('')
+  const canEdit = editing && !locked
+
+  function commit(next) {
+    onChangeExtras(joinExtraAccountable(next))
+    setEditIndex(null)
+    setEditValue('')
+  }
+
+  function addName() {
+    const name = draft.trim()
+    if (!name) return
+    const folds = new Set(
+      [...aligned, ...extras].map((row) => String(row).toLowerCase()),
+    )
+    if (folds.has(name.toLowerCase())) {
+      setDraft('')
+      return
+    }
+    commit([...extras, name])
+    setDraft('')
+  }
+
+  function saveEdit() {
+    const name = editValue.trim()
+    if (editIndex == null) return
+    if (!name) {
+      commit(extras.filter((_, index) => index !== editIndex))
+      return
+    }
+    commit(extras.map((row, index) => (index === editIndex ? name : row)))
+  }
+
+  return (
+    <div className="opcr-accountable">
+      {aligned.length === 0 && extras.length === 0 && !canEdit ? null : (
+        <ul className="opcr-accountable-list">
+          {aligned.map((name) => (
+            <li key={`auto-${name}`}>{name}</li>
+          ))}
+          {extras.map((name, index) => (
+            <li key={`extra-${name}-${index}`}>
+              {canEdit && editIndex === index ? (
+                <div className="opcr-accountable-edit print-hide">
+                  <input
+                    className="field"
+                    value={editValue}
+                    onChange={(event) => setEditValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        saveEdit()
+                      }
+                      if (event.key === 'Escape') setEditIndex(null)
+                    }}
+                    aria-label="Edit name"
+                  />
+                  <button type="button" onClick={saveEdit} title="Save name">
+                    <Check size={12} />
+                  </button>
+                  <button type="button" onClick={() => setEditIndex(null)} title="Cancel">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <span className="opcr-accountable-extra">
+                  {name}
+                  {canEdit && (
+                    <span className="opcr-accountable-actions print-hide">
+                      <button
+                        type="button"
+                        title="Edit name"
+                        onClick={() => {
+                          setEditIndex(index)
+                          setEditValue(name)
+                        }}
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        title="Remove name"
+                        onClick={() => commit(extras.filter((_, row) => row !== index))}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </span>
+                  )}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <div className="opcr-accountable-add print-hide">
+          <input
+            className="field"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addName()
+              }
+            }}
+            placeholder="Add a name not in the roster"
+            aria-label="Add a name not in the roster"
+          />
+          <button type="button" className="opcr-accountable-add-btn" onClick={addName}>
+            <Plus size={12} />
+            Add
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const OPCR_TABLE_COLS = 9
 
 function OpcrColGroup() {
@@ -200,6 +361,7 @@ function OpcrLineCells({
   onRemoveIndicator,
   accountableEntry,
   accountableRowSpan,
+  alignedNames,
 }) {
   return (
     <>
@@ -229,16 +391,13 @@ function OpcrLineCells({
       </td>
       {accountableEntry ? (
         <td rowSpan={accountableRowSpan} className="align-top leading-6 text-slate-700">
-          {editing && !locked ? (
-            <textarea
-              value={accountableEntry.accountable || ''}
-              onChange={(event) => onUpdate(accountableEntry.id, 'accountable', event.target.value)}
-              className="field min-h-16"
-              placeholder="Division or person accountable"
-            />
-          ) : (
-            <p className="whitespace-pre-wrap">{accountableEntry.accountable || ''}</p>
-          )}
+          <AccountablePeople
+            aligned={alignedNames}
+            extrasText={accountableEntry.accountable || ''}
+            editing={editing}
+            locked={locked}
+            onChangeExtras={(value) => onUpdate(accountableEntry.id, 'accountable', value)}
+          />
         </td>
       ) : null}
       <td>
@@ -290,6 +449,7 @@ function OpcrFunctionGroups({
   onDragOver,
   onDrop,
   onDragEnd,
+  alignedByOutput = {},
 }) {
   const canDrag = editing && !locked
 
@@ -383,6 +543,7 @@ function OpcrFunctionGroups({
             onRemoveIndicator={onRemove}
             accountableEntry={isPrimary ? primary : null}
             accountableRowSpan={isPrimary ? lines.length : 0}
+            alignedNames={alignedNamesForEntry(primary, alignedByOutput)}
           />
         </tr>
       )
@@ -477,6 +638,8 @@ export default function MyOpcr() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [alignedByOutput, setAlignedByOutput] = useState(() => alignedMapFromBoardCache(readBoardCache()))
+  const location = useLocation()
   const editSnapshotRef = useRef(null)
   const editingIdentityRef = useRef(false)
 
@@ -604,6 +767,49 @@ export default function MyOpcr() {
   }, [user?.id])
 
   useEffect(() => {
+    let active = true
+
+    function applyAlignedCache({ evenEmpty = false } = {}) {
+      const cached = alignedMapFromBoardCache(readBoardCache())
+      if (evenEmpty ? Object.keys(cached).length : alignedMapHasNames(cached)) {
+        setAlignedByOutput(cached)
+      }
+      return cached
+    }
+
+    async function refreshAligned() {
+      applyAlignedCache()
+      if (!supabase) return
+      try {
+        const context = await loadTallyContext(supabase, { includePeople: true })
+        if (!active) return
+        const live = buildAlignedAccountableMap(
+          context.people,
+          context.items,
+          context.tallies,
+          context.personItemByOutput,
+        )
+        const latestCache = alignedMapFromBoardCache(readBoardCache())
+        setAlignedByOutput(mergeAlignedMaps(live, latestCache))
+      } catch {
+        if (!active) return
+        applyAlignedCache()
+      }
+    }
+
+    if (location.pathname === '/opcr') void refreshAligned()
+
+    function onTallyUpdated() {
+      applyAlignedCache({ evenEmpty: true })
+    }
+    window.addEventListener('opcr-tally-updated', onTallyUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('opcr-tally-updated', onTallyUpdated)
+    }
+  }, [location.pathname])
+
+  useEffect(() => {
     function onUp() {
       if (!dragId) setGripId(null)
     }
@@ -652,6 +858,25 @@ export default function MyOpcr() {
       editSnapshotRef.current = captureEditSnapshot()
     }
     setEditingIdentity(true)
+    const cached = alignedMapFromBoardCache(readBoardCache())
+    if (alignedMapHasNames(cached)) setAlignedByOutput(cached)
+    if (supabase) {
+      loadTallyContext(supabase, { includePeople: true })
+        .then((context) => {
+          setAlignedByOutput(
+            mergeAlignedMaps(
+              buildAlignedAccountableMap(
+                context.people,
+                context.items,
+                context.tallies,
+                context.personItemByOutput,
+              ),
+              alignedMapFromBoardCache(readBoardCache()),
+            ),
+          )
+        })
+        .catch(() => {})
+    }
   }
 
   async function cancelEdit() {
@@ -818,7 +1043,16 @@ export default function MyOpcr() {
     setSaving(true)
     setError('')
     try {
-      const savedRows = await saveOpcrRows(supabase, form.id, entries, removedIds)
+      const cleanedEntries = entries.map((entry) => {
+        if (!isPrimaryOpcrEntry(entry)) return entry
+        return {
+          ...entry,
+          accountable: joinExtraAccountable(
+            extrasWithoutAligned(entry.accountable, alignedNamesForEntry(entry, alignedByOutput)),
+          ),
+        }
+      })
+      const savedRows = await saveOpcrRows(supabase, form.id, cleanedEntries, removedIds)
       setEntries(savedRows)
       setRemovedIds([])
       const savedDate = await saveFormSigner(supabase, form.id, {
@@ -962,6 +1196,7 @@ export default function MyOpcr() {
     onDragOver: setDropId,
     onDrop: moveRow,
     onDragEnd: clearDrag,
+    alignedByOutput,
   }
 
   if (loading) return <LoadingState label="Loading your OPCR…" />

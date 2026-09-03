@@ -1389,6 +1389,124 @@ export function buildBoardRows(people, items, tallies, personItemByOutput = {}) 
   return nextRows
 }
 
+export function extraAccountableNames(text) {
+  const raw = String(text || '').trim()
+  if (!raw) return []
+  const chunks = /\r?\n/.test(raw) ? raw.split(/\r?\n/) : raw.split(/\s*[/,;]\s*/)
+  const seen = new Set()
+  const names = []
+  for (const chunk of chunks) {
+    const name = String(chunk || '').trim()
+    if (!name) continue
+    const fold = name.toLowerCase()
+    if (seen.has(fold)) continue
+    seen.add(fold)
+    names.push(name)
+  }
+  return names
+}
+
+export function joinExtraAccountable(names) {
+  return extraAccountableNames((names || []).join('\n')).join('\n')
+}
+
+function staffAccountableName(person) {
+  return String(person?.full_name || person?.short_name || '').trim()
+}
+
+function putAlignedNames(map, key, names) {
+  if (key == null || key === '') return
+  map[String(key)] = names
+}
+
+function addUniqueName(names, seen, person) {
+  const name = staffAccountableName(person)
+  if (!name) return
+  const fold = name.toLowerCase()
+  if (seen.has(fold)) return
+  seen.add(fold)
+  names.push(name)
+}
+
+function rowHasTallyValue(row) {
+  return toCount(row?.target) > 0 || toCount(row?.accomplished) > 0
+}
+
+function tallyRowForPersonItem(rows, person, item, personItemByOutput) {
+  const outKey = outputKey(item.output)
+  const personItemId = personItemByOutput[person.id]?.[outKey] || item.id
+  return (
+    rows[tallyKey(person.id, item.id, TALLY_PERIOD_ID)] ||
+    rows[tallyKey(person.id, personItemId, TALLY_PERIOD_ID)] ||
+    (person.user_id ? rows[tallyKey(person.user_id, item.id, TALLY_PERIOD_ID)] : null) ||
+    (person.user_id ? rows[tallyKey(person.user_id, personItemId, TALLY_PERIOD_ID)] : null)
+  )
+}
+
+function outputLookupKeys(output) {
+  const raw = String(output || '').trim()
+  const lower = raw.toLowerCase()
+  const compact = lower.replace(/\s+/g, ' ')
+  return [...new Set([outputKey(raw), lower, compact].filter(Boolean))]
+}
+
+export function buildAlignedAccountableMap(people, items, tallies, personItemByOutput = {}, boardRows) {
+  const rows = boardRows || buildBoardRows(people, items, tallies, personItemByOutput)
+  const map = {}
+  const roster = people || []
+
+  for (const item of items || []) {
+    const names = []
+    const seen = new Set()
+    const outKey = outputKey(item.output)
+    for (const person of roster) {
+      if (!person?.id) continue
+      const row = tallyRowForPersonItem(rows, person, item, personItemByOutput)
+      if (!rowHasTallyValue(row)) continue
+      addUniqueName(names, seen, person)
+    }
+    putAlignedNames(map, item.id, names)
+    for (const key of outputLookupKeys(item.output)) putAlignedNames(map, key, names)
+    for (const person of roster) {
+      const personItemId = personItemByOutput[person.id]?.[outKey]
+      if (personItemId && personItemId !== item.id) putAlignedNames(map, personItemId, names)
+    }
+  }
+
+  const leftover = {}
+  for (const [key, row] of Object.entries(rows || {})) {
+    if (!rowHasTallyValue(row)) continue
+    const itemId = row.item_id || String(key).split(':')[1]
+    if (!itemId || map[itemId]?.length) continue
+    const personId = String(key).split(':')[0]
+    const person = roster.find(
+      (staff) => staff.id === row.staff_id || staff.id === personId || (row.user_id && staff.user_id === row.user_id),
+    )
+    if (!person) continue
+    if (!leftover[itemId]) leftover[itemId] = { names: [], seen: new Set() }
+    addUniqueName(leftover[itemId].names, leftover[itemId].seen, person)
+  }
+  for (const [itemId, bucket] of Object.entries(leftover)) {
+    putAlignedNames(map, itemId, bucket.names)
+  }
+
+  return map
+}
+
+export function alignedMapFromBoardCache(board) {
+  if (!board?.people?.length || !board.items?.length) return {}
+  return buildAlignedAccountableMap(board.people, board.items, null, {}, board.rows || {})
+}
+
+export function alignedNamesForEntry(entry, map) {
+  if (!entry || !map) return []
+  const keys = [entry.item_id, ...outputLookupKeys(entry.output)]
+  for (const key of keys) {
+    if (key && map[key]?.length) return map[key]
+  }
+  return []
+}
+
 export function indexTallies(tallies) {
   const map = {}
   for (const tally of normalizeTallies(tallies)) {
@@ -1443,6 +1561,7 @@ export function writeBoardCache(snapshot) {
       BOARD_CACHE_KEY,
       JSON.stringify({ ...snapshot, cacheVersion: TALLY_CACHE_VERSION }),
     )
+    window.dispatchEvent(new Event('opcr-tally-updated'))
   } catch {
     // Ignore quota / private-mode failures.
   }

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { Alert, EmptyState, LoadingState } from '../components/ui'
@@ -18,7 +17,7 @@ import {
   toCount,
   writeMyTallyCache,
 } from '../lib/opcr'
-import { coreFunctionLabel, groupItemsBySection } from '../lib/coreFunctions'
+import { groupItemsBySection } from '../lib/coreFunctions'
 import { loadDailyContext, todayValue, yearTotal } from '../lib/daily'
 
 const TONE_TEXT = {
@@ -66,7 +65,6 @@ export default function MyTally() {
   const [items, setItems] = useState(cached?.items || [])
   const [values, setValues] = useState(cached?.values || {})
   const [targets, setTargets] = useState(cached?.targets || {})
-  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(!cached?.items?.length)
   const [error, setError] = useState('')
 
@@ -163,22 +161,7 @@ export default function MyTally() {
     }
   }, [user, isAdmin])
 
-  const listedItems = items
-
-  const visibleItems = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return listedItems.filter((item) => {
-      const label = coreFunctionLabel(item.output).toLowerCase()
-      return (
-        !needle ||
-        item.output.toLowerCase().includes(needle) ||
-        label.includes(needle) ||
-        item.success_indicator.toLowerCase().includes(needle)
-      )
-    })
-  }, [listedItems, query])
-
-  const grouped = useMemo(() => groupItemsBySection(visibleItems), [visibleItems])
+  const grouped = useMemo(() => groupItemsBySection(items), [items])
 
   const summary = useMemo(() => {
     let filled = 0
@@ -197,36 +180,26 @@ export default function MyTally() {
 
   return (
     <div className="my-tally w-full space-y-4 pb-8">
-      <div>
-        <p className="text-xs font-semibold tracking-[0.18em] text-teal-700 uppercase">
-          Tally per person
-        </p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
-          {personLabel(staff || profile)}
-        </h1>
-        <p className="mt-1.5 overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap text-slate-500">
-          {`Your assigned targets and year totals for ${annualPeriodLabel(year)}.${staff?.position ? ` ${staff.position}.` : ''} Add work on Daily log; this page is view only.`}
-        </p>
-      </div>
-
-      <div className="flex items-stretch gap-3">
-        <div className="card flex w-40 shrink-0 flex-col justify-center px-4 py-3">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Filled</p>
-          <p className="mt-0.5 text-2xl font-semibold">{summary.filled}</p>
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-[0.18em] text-teal-700 uppercase">
+            Tally per person
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            {personLabel(staff || profile)}
+          </h1>
+          <p className="mt-1.5 overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap text-slate-500">
+            {`Your assigned targets and year totals for ${annualPeriodLabel(year)}.${staff?.position ? ` ${staff.position}.` : ''} Add work on Daily log; this page is view only.`}
+          </p>
         </div>
-        <div className="card flex w-48 shrink-0 flex-col justify-center px-4 py-3">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Assigned targets</p>
-          <p className="mt-0.5 text-2xl font-semibold">{summary.assigned}</p>
-        </div>
-        <div className="card flex min-w-0 flex-1 items-center p-3">
-          <div className="relative w-full">
-            <Search size={16} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search outputs…"
-              className="field field-with-icon"
-            />
+        <div className="flex shrink-0 items-stretch gap-3">
+          <div className="card flex w-36 flex-col justify-center px-4 py-2.5">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Filled</p>
+            <p className="mt-0.5 text-2xl font-semibold">{summary.filled}</p>
+          </div>
+          <div className="card flex w-44 flex-col justify-center px-4 py-2.5">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Assigned targets</p>
+            <p className="mt-0.5 text-2xl font-semibold">{summary.assigned}</p>
           </div>
         </div>
       </div>
@@ -312,14 +285,10 @@ export default function MyTally() {
         ))}
       </div>
 
-      {visibleItems.length === 0 && (
+      {items.length === 0 && (
         <EmptyState
-          title={items.length === 0 ? 'No outputs yet' : 'Nothing matches'}
-          body={
-            items.length === 0
-              ? 'Open My OPCR and save the office form so outputs appear here, or ask an admin to set the office OPCR.'
-              : 'Clear the search to see your outputs again.'
-          }
+          title="No outputs yet"
+          body="Open My OPCR and save the office form so outputs appear here, or ask an admin to set the office OPCR."
         />
       )}
     </div>
