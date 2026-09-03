@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   ChevronUp,
@@ -14,10 +14,12 @@ import {
 import { useAuth } from '../context/useAuth'
 import { Avatar, BrandLogo, Button } from './ui'
 import KeepAlive from './KeepAlive'
-import TallyBoard from '../pages/TallyBoard'
-import MyTally from '../pages/MyTally'
-import DailyLog from '../pages/DailyLog'
-import MyOpcr from '../pages/MyOpcr'
+import LazyPage from './LazyPage'
+
+const TallyBoard = lazy(() => import('../pages/TallyBoard'))
+const MyTally = lazy(() => import('../pages/MyTally'))
+const DailyLog = lazy(() => import('../pages/DailyLog'))
+const MyOpcr = lazy(() => import('../pages/MyOpcr'))
 
 const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr'])
 
@@ -115,14 +117,24 @@ export default function Layout() {
         </header>
         <main className="w-full p-4 sm:px-5 sm:py-6 print:p-0">
           <KeepAlive active={pathname === '/'}>
-            <TallyBoard />
+            <LazyPage label="Loading tally board…">
+              <TallyBoard />
+            </LazyPage>
           </KeepAlive>
-          {pathname === '/my-tally' && <MyTally />}
+          {pathname === '/my-tally' && (
+            <LazyPage label="Loading My Tally…">
+              <MyTally />
+            </LazyPage>
+          )}
           <KeepAlive active={pathname === '/daily'}>
-            <DailyLog />
+            <LazyPage label="Loading daily log…">
+              <DailyLog />
+            </LazyPage>
           </KeepAlive>
           <KeepAlive active={pathname === '/opcr'}>
-            <MyOpcr />
+            <LazyPage label="Loading My OPCR…">
+              <MyOpcr />
+            </LazyPage>
           </KeepAlive>
           {!showWorkPage && <Outlet />}
         </main>

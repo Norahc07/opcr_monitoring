@@ -1,16 +1,19 @@
+import { lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import AdminRoute from './components/AdminRoute'
 import Layout from './components/Layout'
+import LazyPage from './components/LazyPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import DesktopOnly from './components/DesktopOnly'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
-import ReviewForm from './pages/ReviewForm'
-import Profile from './pages/Profile'
 import WorkRoutePlaceholder from './components/WorkRoutePlaceholder'
-import AuditLogs from './pages/AuditLogs'
-import Users from './pages/Users'
+
+const Profile = lazy(() => import('./pages/Profile'))
+const ReviewForm = lazy(() => import('./pages/ReviewForm'))
+const AuditLogs = lazy(() => import('./pages/AuditLogs'))
+const Users = lazy(() => import('./pages/Users'))
 
 export default function App() {
   return (
@@ -31,13 +34,22 @@ export default function App() {
           <Route path="/tally" element={<Navigate to="/my-tally" replace />} />
           <Route path="/opcr" element={<WorkRoutePlaceholder />} />
           <Route path="/daily" element={<WorkRoutePlaceholder />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route
+            path="/profile"
+            element={
+              <LazyPage label="Loading profile…">
+                <Profile />
+              </LazyPage>
+            }
+          />
           <Route path="/admin" element={<Navigate to="/" replace />} />
           <Route
             path="/review/:formId"
             element={
               <AdminRoute>
-                <ReviewForm />
+                <LazyPage label="Loading review…">
+                  <ReviewForm />
+                </LazyPage>
               </AdminRoute>
             }
           />
@@ -45,7 +57,9 @@ export default function App() {
             path="/users"
             element={
               <AdminRoute>
-                <Users />
+                <LazyPage label="Loading users…">
+                  <Users />
+                </LazyPage>
               </AdminRoute>
             }
           />
@@ -53,7 +67,9 @@ export default function App() {
             path="/audit"
             element={
               <AdminRoute>
-                <AuditLogs />
+                <LazyPage label="Loading audit logs…">
+                  <AuditLogs />
+                </LazyPage>
               </AdminRoute>
             }
           />

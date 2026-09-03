@@ -64,4 +64,26 @@ export default defineConfig(({ command }) => ({
       },
     }),
   ],
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react',
+              test: /[\\/]node_modules[\\/](?:react|react-dom|react-router(?:-dom)?|scheduler)[\\/]/,
+            },
+            {
+              name: 'supabase',
+              test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+            },
+            {
+              name: 'icons',
+              test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
 }))
