@@ -55,7 +55,6 @@ export default defineConfig(({ command }) => ({
       },
       workbox: {
         globPatterns: command === 'build' ? ['**/*.{js,css,html,ico,png,svg,woff2}'] : [],
-        globStrict: false,
         navigateFallback: command === 'build' ? 'index.html' : undefined,
       },
       devOptions: {
