@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
@@ -54,12 +54,23 @@ export default defineConfig(({ command }) => ({
         ],
       },
       workbox: {
-        globPatterns: command === 'build' ? ['**/*.{js,css,html,ico,png,svg,woff2}'] : [],
-        navigateFallback: command === 'build' ? 'index.html' : undefined,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globIgnores: ['**/node_modules/**/*', 'sw.js', 'workbox-*.js'],
+        navigateFallback: 'index.html',
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'opcr-pages',
+            },
+          },
+        ],
       },
       devOptions: {
         enabled: true,
         type: 'module',
+        navigateFallback: 'index.html',
       },
     }),
   ],
@@ -85,4 +96,4 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
-}))
+})

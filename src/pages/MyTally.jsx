@@ -21,8 +21,8 @@ import { groupItemsBySection } from '../lib/coreFunctions'
 import { loadDailyContext, todayValue, yearTotal } from '../lib/daily'
 
 const TONE_TEXT = {
-  met: 'text-green-600',
-  short: 'text-red-600',
+  met: 'text-blue-600',
+  short: 'text-orange-600',
   neutral: 'text-slate-900',
 }
 

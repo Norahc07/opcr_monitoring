@@ -36,8 +36,8 @@ function statusTone(accomplished, target) {
 }
 
 const TONE_TEXT = {
-  met: 'text-green-600',
-  short: 'text-red-600',
+  met: 'text-blue-600',
+  short: 'text-orange-600',
   neutral: 'text-slate-900',
 }
 
@@ -391,7 +391,7 @@ export default function TallyBoard() {
           isAdmin
             ? isTargetView
               ? 'Set each person’s targets in the table below. You can also type accomplishments in any staff column.'
-              : 'Type accomplishment counts in any staff column. Green means the target is met; red means it is not yet.'
+              : 'Type accomplishment counts in any staff column. Blue means the target is met; orange means it is not yet.'
             : 'Type your accomplishment counts in your column (highlighted). They appear on the admin board automatically.'
         }
         actions={
@@ -431,12 +431,12 @@ export default function TallyBoard() {
         ) : isAdmin ? (
           <>
             Type counts for any staff for January–December {year}. They save automatically.
-            Green means the target is met; red means not yet.
+            Blue means the target is met; orange means not yet.
           </>
         ) : myStaffId ? (
           <>
             Your column is highlighted. Type your counts for January–December {year}. They
-            save automatically. Green means the target is met; red means not yet.
+            save automatically. Blue means the target is met; orange means not yet.
           </>
         ) : (
           <>
