@@ -6,18 +6,61 @@ export function todayValue() {
   return local.toISOString().slice(0, 10)
 }
 
+export const DAILY_SEMESTERS = [
+  { id: 'jan_jun', label: 'January – June', shortLabel: 'Jan–Jun' },
+  { id: 'jul_dec', label: 'July – December', shortLabel: 'Jul–Dec' },
+]
+
+export function workYear(value) {
+  return String(value || '').slice(0, 4)
+}
+
+export function dailySemesterId(value) {
+  const month = Number(String(value || '').slice(5, 7))
+  return month >= 7 ? 'jul_dec' : 'jan_jun'
+}
+
+export function semesterDateBounds(year, semesterId) {
+  const y = String(year || new Date().getFullYear())
+  if (semesterId === 'jul_dec') {
+    return { min: `${y}-07-01`, max: `${y}-12-31` }
+  }
+  return { min: `${y}-01-01`, max: `${y}-06-30` }
+}
+
+export function clampDateToSemester(value, semesterId) {
+  const date = String(value || todayValue())
+  const year = workYear(date) || String(new Date().getFullYear())
+  const { min, max } = semesterDateBounds(year, semesterId)
+  if (date < min) return min
+  if (date > max) return max
+  return date
+}
+
+export function shiftToSemester(value, semesterId) {
+  const date = String(value || todayValue())
+  if (dailySemesterId(date) === semesterId) return clampDateToSemester(date, semesterId)
+  const [year, month, day] = date.split('-').map(Number)
+  const nextMonth = semesterId === 'jul_dec' ? month + 6 : month - 6
+  const lastDay = new Date(year, nextMonth, 0).getDate()
+  const nextDay = Math.min(day || 1, lastDay)
+  return `${year}-${String(nextMonth).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`
+}
+
 export function yearCaption(value) {
-  const year = String(value || '').slice(0, 4)
+  const year = workYear(value)
   return year ? `January–December ${year}` : 'January–December'
 }
 
-/** @deprecated use yearCaption */
-export function semesterCaption(value) {
-  return yearCaption(value)
+export function semesterCaption(value, semesterId) {
+  const year = workYear(value)
+  const id = semesterId || dailySemesterId(value)
+  const label = DAILY_SEMESTERS.find((row) => row.id === id)?.label || 'January – June'
+  return year ? `${label} ${year}` : label
 }
 
 export function yearTotal(logs, itemId, workDate) {
-  const year = String(workDate || '').slice(0, 4)
+  const year = workYear(workDate)
   return (logs || []).reduce((sum, row) => {
     if (row.item_id !== itemId) return sum
     if (year && !String(row.work_date || '').startsWith(year)) return sum
@@ -25,9 +68,16 @@ export function yearTotal(logs, itemId, workDate) {
   }, 0)
 }
 
-/** @deprecated use yearTotal */
-export function semesterTotal(logs, itemId, workDate) {
-  return yearTotal(logs, itemId, workDate)
+export function semesterTotal(logs, itemId, workDate, semesterId) {
+  const year = workYear(workDate)
+  const sem = semesterId || dailySemesterId(workDate)
+  return (logs || []).reduce((sum, row) => {
+    if (row.item_id !== itemId) return sum
+    const date = String(row.work_date || '')
+    if (year && !date.startsWith(year)) return sum
+    if (dailySemesterId(date) !== sem) return sum
+    return sum + toCount(row.quantity)
+  }, 0)
 }
 
 export function formatWorkDate(value) {

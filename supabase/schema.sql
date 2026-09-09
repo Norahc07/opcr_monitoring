@@ -19,6 +19,9 @@ alter table public.profiles
 alter table public.profiles
   add column if not exists avatar_url text not null default '';
 
+alter table public.profiles
+  add column if not exists last_seen_at timestamptz;
+
 -- Official staffs = login accounts. Tally columns follow this table, including admin.
 create table if not exists public.office_staff (
   id uuid primary key default gen_random_uuid(),
@@ -270,6 +273,31 @@ drop trigger if exists protect_profile_role on public.profiles;
 create trigger protect_profile_role
   before update on public.profiles
   for each row execute procedure public.protect_profile_role();
+
+create or replace function public.touch_last_seen()
+returns timestamptz
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  seen timestamptz := now();
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  update public.profiles
+  set last_seen_at = seen
+  where id = auth.uid();
+
+  if not found then
+    raise exception 'Profile not found';
+  end if;
+
+  return seen;
+end;
+$$;
 
 create or replace function public.protect_form_updates()
 returns trigger
@@ -649,6 +677,7 @@ grant select, insert, update on public.opcr_tallies to authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.my_staff_id() to authenticated;
 grant execute on function public.delete_unused_opcr_item(uuid) to authenticated;
+grant execute on function public.touch_last_seen() to authenticated;
 
 -- After the first admin exists, run supabase/admin_users.sql and supabase/staffs.sql
 -- so the Users page lists real login accounts as Staffs.

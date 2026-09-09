@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Save } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import { groupItemsBySection, sectionLabel } from '../lib/coreFunctions'
 import { formatCount, toCount } from '../lib/opcr'
 import {
+  DAILY_SEMESTERS,
+  dailySemesterId,
   formatWorkDate,
   loadDailyContext,
   logsForDate,
   readDailyCache,
   saveDailyLogs,
+  semesterCaption,
+  semesterDateBounds,
+  semesterTotal,
+  shiftToSemester,
   todayValue,
+  workYear,
   writeDailyCache,
-  yearCaption,
-  yearTotal,
 } from '../lib/daily'
-import { Alert, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
+import { Alert, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
 import CountEditModal, { CountActions } from '../components/CountEditModal'
 
 export default function DailyLog() {
@@ -28,6 +32,7 @@ export default function DailyLog() {
   const [items, setItems] = useState(initialCache?.items || [])
   const [logs, setLogs] = useState(initialCache?.logs || [])
   const [workDate, setWorkDate] = useState(todayValue())
+  const [semester, setSemester] = useState(() => dailySemesterId(todayValue()))
   const [quantities, setQuantities] = useState({})
   const [notes, setNotes] = useState({})
   const [loading, setLoading] = useState(!initialCache)
@@ -37,6 +42,14 @@ export default function DailyLog() {
   const userRef = useRef(user)
   const quantitiesRef = useRef({})
   const notesRef = useRef({})
+  const logsRef = useRef([])
+  const itemsRef = useRef([])
+  const workDateRef = useRef(workDate)
+  const periodRef = useRef(period)
+  const staffRef = useRef(staff)
+  const savingRef = useRef(false)
+  const notesDirtyRef = useRef(false)
+  const noteTimer = useRef(null)
 
   useEffect(() => {
     userRef.current = user
@@ -50,12 +63,33 @@ export default function DailyLog() {
     notesRef.current = notes
   }, [notes])
 
-  async function load({ silent = false } = {}) {
+  useEffect(() => {
+    logsRef.current = logs
+  }, [logs])
+
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
+
+  useEffect(() => {
+    workDateRef.current = workDate
+  }, [workDate])
+
+  useEffect(() => {
+    periodRef.current = period
+  }, [period])
+
+  useEffect(() => {
+    staffRef.current = staff
+  }, [staff])
+
+  async function load({ silent = false, force = false } = {}) {
     const currentUser = userRef.current
     if (!supabase || !currentUser) {
       setLoading(false)
       return
     }
+    if (silent && !force && (savingRef.current || notesDirtyRef.current)) return
     if (!silent) setLoading(true)
     setError('')
     try {
@@ -110,6 +144,7 @@ export default function DailyLog() {
     return () => {
       active = false
       window.clearInterval(poll)
+      window.clearTimeout(noteTimer.current)
     }
   }, [user?.id])
 
@@ -140,45 +175,83 @@ export default function DailyLog() {
     return map
   }, [logs, workDate])
 
-  const yearLabel = yearCaption(workDate)
+  const dateBounds = semesterDateBounds(workYear(workDate) || new Date().getFullYear(), semester)
+  const semLabel = semesterCaption(workDate, semester)
   const dayLabel = formatWorkDate(workDate)
 
-  async function save(nextQuantities = quantitiesRef.current) {
-    if (!period || !staff || !user) return
+  async function save({ nextQuantities = quantitiesRef.current, quiet = false } = {}) {
+    const currentPeriod = periodRef.current
+    const currentStaff = staffRef.current
+    const currentUser = userRef.current
+    const currentDate = workDateRef.current
+    if (!currentPeriod || !currentStaff || !currentUser) return
+    savingRef.current = true
     setSaving(true)
-    setError('')
-    clearToast()
+    if (!quiet) {
+      setError('')
+      clearToast()
+    }
     try {
-      const rows = items
+      const dayLogs = logsForDate(logsRef.current, currentDate)
+      const logMap = Object.fromEntries(dayLogs.map((row) => [row.item_id, row]))
+      const rows = itemsRef.current
         .filter((item) => item.id && !item.pending)
         .map((item) => ({
           item_id: item.id,
           quantity: nextQuantities[item.id],
           notes: notesRef.current[item.id],
-          log_id: logByItem[item.id]?.id,
-          keep: Boolean(logByItem[item.id]),
+          log_id: logMap[item.id]?.id,
+          keep: Boolean(logMap[item.id]),
         }))
       await saveDailyLogs(supabase, {
-        periodId: period.id,
-        staffId: staff.id,
-        userId: user.id,
-        workDate,
+        periodId: currentPeriod.id,
+        staffId: currentStaff.id,
+        userId: currentUser.id,
+        workDate: currentDate,
         rows,
       })
-      await load({ silent: true })
-      const filled = rows.filter((row) => toCount(row.quantity) > 0).length
-      await writeAudit(
-        supabase,
-        'Saved daily accomplishments',
-        'Daily log',
-        `${workDate} · ${filled} item${filled === 1 ? '' : 's'}`,
-      )
-      showToast('Daily counts saved. The tally board is updated.')
+      notesDirtyRef.current = false
+      await load({ silent: true, force: true })
+      if (!quiet) {
+        const filled = rows.filter((row) => toCount(row.quantity) > 0).length
+        await writeAudit(
+          supabase,
+          'Saved daily accomplishments',
+          'Daily log',
+          `${currentDate} · ${filled} item${filled === 1 ? '' : 's'}`,
+        )
+        showToast('Count saved. The tally board is updated.')
+      }
     } catch (err) {
       setError(err.message)
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
+  }
+
+  function scheduleNoteSave() {
+    notesDirtyRef.current = true
+    window.clearTimeout(noteTimer.current)
+    noteTimer.current = window.setTimeout(() => {
+      void save({ quiet: true })
+    }, 700)
+  }
+
+  async function changeWorkDate(nextDate) {
+    if (!nextDate || nextDate === workDateRef.current) return
+    window.clearTimeout(noteTimer.current)
+    await save({ quiet: true })
+    setWorkDate(nextDate)
+    setSemester(dailySemesterId(nextDate))
+  }
+
+  async function changeSemester(nextId) {
+    if (nextId === semester || savingRef.current) return
+    window.clearTimeout(noteTimer.current)
+    await save({ quiet: true })
+    setSemester(nextId)
+    setWorkDate(shiftToSemester(workDateRef.current, nextId))
   }
 
   function openCountModal(mode, item) {
@@ -188,7 +261,7 @@ export default function DailyLog() {
       itemId: item.id,
       current: toCount(quantities[item.id]),
       title: item.output || 'Output',
-      detail: `${dayLabel} · ${yearLabel}`,
+      detail: `${dayLabel} · ${semLabel}`,
     })
   }
 
@@ -201,7 +274,8 @@ export default function DailyLog() {
     quantitiesRef.current = nextQuantities
     setQuantities(nextQuantities)
     setCountModal(null)
-    await save(nextQuantities)
+    window.clearTimeout(noteTimer.current)
+    await save({ nextQuantities, quiet: false })
   }
 
   if (loading) return <LoadingState label="Loading daily log…" />
@@ -211,7 +285,14 @@ export default function DailyLog() {
       <PageHeader
         kicker={period?.office_name || 'E-Learning Ville'}
         title="Daily accomplishments"
-        description="Choose a date, then Add or Update the count for each output. Counts save from the modal. Use Save for notes. Rows follow My OPCR — added or removed lines show here after you save the form."
+        description="Choose a semester and date, then Add or Update the count for each output. Changes save automatically and update the annual tally board."
+        actions={
+          <Segmented
+            value={semester}
+            onChange={(id) => void changeSemester(id)}
+            options={DAILY_SEMESTERS.map((row) => ({ id: row.id, label: row.label }))}
+          />
+        }
       />
 
       <section className="card p-5">
@@ -228,32 +309,30 @@ export default function DailyLog() {
                 id="daily-work-date"
                 type="date"
                 className="field h-11"
+                min={dateBounds.min}
+                max={dateBounds.max}
                 value={workDate}
-                onChange={(event) => setWorkDate(event.target.value)}
+                onChange={(event) => void changeWorkDate(event.target.value)}
               />
             </div>
             <div className="min-w-0 pb-1">
               <p className="text-sm font-semibold text-slate-900">{dayLabel}</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Counts for this day add to the <strong>{yearLabel}</strong> tally
+                This page shows <strong>{semLabel}</strong>. The tally board still totals January–December.
               </p>
             </div>
           </div>
-          <Button className="h-11 min-w-[8.5rem] shrink-0" disabled={saving || !staff} onClick={() => void save()}>
-            <Save size={16} />
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
         </div>
         {staff && (
           <ol className="mt-4 flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-100 pt-3 text-sm text-slate-600">
             <li>
-              <span className="font-bold text-teal-800">1.</span> Pick the date
+              <span className="font-bold text-teal-800">1.</span> Pick the semester and date
             </li>
             <li>
               <span className="font-bold text-teal-800">2.</span> Add or update this day’s count
             </li>
             <li>
-              <span className="font-bold text-teal-800">3.</span> Save notes if you typed any
+              <span className="font-bold text-teal-800">3.</span> Counts and notes save by themselves
             </li>
           </ol>
         )}
@@ -300,7 +379,7 @@ export default function DailyLog() {
                     <th className="px-2 py-2.5 text-center font-semibold">
                       Total
                       <span className="mt-0.5 block text-[10px] font-medium tracking-normal text-slate-400 normal-case">
-                        {yearLabel}
+                        {semLabel}
                       </span>
                     </th>
                     <th className="px-3 py-2.5 font-semibold">Note</th>
@@ -309,7 +388,7 @@ export default function DailyLog() {
                 <tbody>
                   {group.items.map((item) => {
                     const itemKey = item.id || item.entry_id
-                    const total = yearTotal(logs, item.id, workDate)
+                    const total = semesterTotal(logs, item.id, workDate, semester)
                     const typed = toCount(quantities[item.id])
                     const shownTotal = total - toCount(logByItem[item.id]?.quantity) + typed
                     return (
@@ -345,7 +424,10 @@ export default function DailyLog() {
                             value={item.id ? (notes[item.id] ?? '') : ''}
                             onChange={(event) => {
                               if (!item.id) return
-                              setNotes((current) => ({ ...current, [item.id]: event.target.value }))
+                              const value = event.target.value
+                              setNotes((current) => ({ ...current, [item.id]: value }))
+                              notesRef.current = { ...notesRef.current, [item.id]: value }
+                              scheduleNoteSave()
                             }}
                             className="field daily-note-field h-10"
                             placeholder="Note"

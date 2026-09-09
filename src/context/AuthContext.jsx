@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
+import { pingLastSeen, PRESENCE_PING_MS } from '../lib/presence'
 import { AuthContext } from './auth-context'
 
 async function fetchProfile(userId) {
@@ -82,6 +83,37 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!supabase || !userId) return undefined
+
+    let active = true
+
+    async function ping() {
+      if (!active) return
+      try {
+        await pingLastSeen(supabase, userId)
+      } catch {
+        // Presence is optional until supabase/user_presence.sql is run.
+      }
+    }
+
+    void ping()
+    const timer = window.setInterval(ping, PRESENCE_PING_MS)
+    function onVisible() {
+      if (document.visibilityState === 'visible') void ping()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [session?.user?.id])
 
   const value = useMemo(
     () => ({

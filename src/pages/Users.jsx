@@ -4,6 +4,7 @@ import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
+import { pingLastSeen, presenceInfo } from '../lib/presence'
 
 const emptyStaff = {
   email: '',
@@ -41,6 +42,25 @@ function Modal({ title, children, onClose }) {
   )
 }
 
+function PresenceStatus({ lastSeenAt, now, isCurrentUser }) {
+  const seenAt = lastSeenAt || (isCurrentUser ? new Date(now).toISOString() : null)
+  const { online, label, detail } = presenceInfo(seenAt, now)
+  return (
+    <div className="flex items-start gap-2">
+      <span
+        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${online ? 'bg-emerald-500' : 'bg-slate-400'}`}
+        aria-hidden="true"
+      />
+      <div>
+        <p className={`text-sm font-semibold ${online ? 'text-emerald-800' : 'text-slate-700'}`}>
+          {label}
+        </p>
+        <p className="text-xs text-slate-500">{detail}</p>
+      </div>
+    </div>
+  )
+}
+
 function Field({ label, children }) {
   return (
     <label className="block">
@@ -59,12 +79,13 @@ export default function Users() {
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
 
   async function load() {
     const [
       { data: staffRows, error: staffError },
       { data: loginRows, error: loginError },
-      { data: profileRows, error: profileError },
+      profileResult,
     ] = await Promise.all([
       supabase
         .from('office_staff')
@@ -72,22 +93,39 @@ export default function Users() {
         .not('user_id', 'is', null)
         .order('sort_order', { ascending: true }),
       supabase.rpc('admin_list_logins'),
-      supabase.from('profiles').select('id, avatar_url, office'),
+      supabase.from('profiles').select('id, avatar_url, office, last_seen_at'),
     ])
     if (staffError) throw staffError
-    if (profileError) throw profileError
+
+    const notices = []
+    let profileRows = profileResult.data
+    if (profileResult.error) {
+      if (String(profileResult.error.message || '').includes('last_seen_at')) {
+        notices.push(
+          'Online status is not set up yet. Open Supabase → SQL Editor → paste and run supabase/user_presence.sql, then refresh this page.',
+        )
+        const { data: fallbackRows, error: fallbackError } = await supabase
+          .from('profiles')
+          .select('id, avatar_url, office')
+        if (fallbackError) throw fallbackError
+        profileRows = fallbackRows
+      } else {
+        throw profileResult.error
+      }
+    }
 
     let logins = loginRows || []
     if (loginError) {
       logins = profileRows || []
       if (loginError.message?.includes('admin_list_logins') || loginError.code === 'PGRST202') {
-        setError(
+        notices.push(
           'Staff create/delete is not set up yet. Run supabase/staffs.sql in the Supabase SQL editor, then refresh this page.',
         )
       } else {
         throw loginError
       }
     }
+    setError(notices.join(' '))
 
     const emailById = new Map(logins.map((row) => [row.id, row.email || '']))
     const officeById = new Map(
@@ -96,12 +134,14 @@ export default function Users() {
       ),
     )
     const photoById = new Map((profileRows || []).map((row) => [row.id, row.avatar_url || '']))
+    const seenById = new Map((profileRows || []).map((row) => [row.id, row.last_seen_at || null]))
     setStaffs(
       (staffRows || []).map((row) => ({
         ...row,
         email: emailById.get(row.user_id) || '',
         office: officeById.get(row.user_id) || 'E-Learning Ville',
         avatar_url: photoById.get(row.user_id) || '',
+        last_seen_at: seenById.get(row.user_id) || null,
       })),
     )
   }
@@ -110,6 +150,8 @@ export default function Users() {
     let active = true
     async function start() {
       try {
+        if (user?.id) await pingLastSeen(supabase, user.id)
+        if (!active) return
         await load()
       } catch (err) {
         if (active) setError(err.message)
@@ -118,10 +160,16 @@ export default function Users() {
       }
     }
     start()
+    const poll = window.setInterval(() => {
+      void load()
+    }, 8000)
+    const clock = window.setInterval(() => setNow(Date.now()), 15000)
     return () => {
       active = false
+      window.clearInterval(poll)
+      window.clearInterval(clock)
     }
-  }, [])
+  }, [user?.id])
 
   const editingId = modal?.user_id || null
 
@@ -242,7 +290,7 @@ export default function Users() {
       <PageHeader
         kicker="Accounts"
         title="Users"
-        description="Staff logins used on the tally board. Use a custom login email (not a real inbox) and reset passwords here when staff forget them."
+        description="Staff logins used on the tally board. Green means they are signed in now. Offline shows how long since they were last active."
         actions={
           <Button onClick={() => setModal({ ...emptyStaff })}>
             <Plus size={16} />
@@ -265,20 +313,21 @@ export default function Users() {
           <p className="text-xs text-slate-500">Official staff accounts used on the tally board.</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
               <tr>
                 <th className="px-4 py-3 font-semibold">Name</th>
                 <th className="px-4 py-3 font-semibold">Email</th>
                 <th className="px-4 py-3 font-semibold">Position</th>
                 <th className="px-4 py-3 font-semibold">Role</th>
+                <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
                     No staff accounts yet. Add staff here, or create users in Supabase and run
                     supabase/staffs.sql.
                   </td>
@@ -305,6 +354,13 @@ export default function Users() {
                   <td className="px-4 py-3 text-slate-600">{row.position || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.role === 'admin' ? 'Admin' : 'Staff'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <PresenceStatus
+                      lastSeenAt={row.last_seen_at}
+                      now={now}
+                      isCurrentUser={row.user_id === user?.id}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
