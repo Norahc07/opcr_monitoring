@@ -4,6 +4,7 @@ import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import { Alert, Button, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
+import CountEditModal, { CountActions } from '../components/CountEditModal'
 import {
   annualPeriodLabel,
   buildBoardRows,
@@ -74,6 +75,7 @@ export default function TallyBoard() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState({})
+  const [countModal, setCountModal] = useState(null)
   const dirtyRef = useRef({})
   const recentlySavedRef = useRef(new Set())
   const applyTallyChangeRef = useRef(null)
@@ -252,11 +254,14 @@ export default function TallyBoard() {
       target: '',
       accomplished: '',
     }
-    const nextRow = { ...existing, [field]: value }
+    const nextValue = toCount(value)
+    const nextRow = { ...existing, [field]: nextValue ? String(nextValue) : '' }
     const nextRows = { ...rowsRef.current, [key]: nextRow }
     rowsRef.current = nextRows
     setRows(nextRows)
-    setDirty((current) => ({ ...current, [key]: true }))
+    const nextDirty = { ...dirtyRef.current, [key]: true }
+    dirtyRef.current = nextDirty
+    setDirty(nextDirty)
     if (period && items.length && people.length) {
       writeBoardCache({
         period,
@@ -265,14 +270,28 @@ export default function TallyBoard() {
         rows: nextRows,
       })
     }
-    scheduleAutoSave()
+    void flushAutoSave()
   }
 
-  function scheduleAutoSave() {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => {
-      persistDirtyRows()
-    }, 700)
+  function openCountModal(mode, person, item) {
+    if (!canEditCell(person.id)) return
+    const key = tallyKey(person.id, item.id, TALLY_PERIOD_ID)
+    const current = toCount(rowsRef.current[key]?.[field])
+    const { primary } = personTableHeader(person)
+    setCountModal({
+      mode,
+      personId: person.id,
+      itemId: item.id,
+      current,
+      title: item.output,
+      detail: `${primary} · ${isTargetView ? 'Target' : 'Accomplishment'} · Jan–Dec ${year}`,
+    })
+  }
+
+  async function confirmCountModal(nextValue) {
+    if (!countModal) return
+    updateCell(countModal.personId, countModal.itemId, nextValue)
+    setCountModal(null)
   }
 
   function flushAutoSave() {
@@ -390,9 +409,9 @@ export default function TallyBoard() {
         description={
           isAdmin
             ? isTargetView
-              ? 'Set each person’s targets in the table below. You can also type accomplishments in any staff column.'
-              : 'Type accomplishment counts in any staff column. Blue means the target is met; orange means it is not yet.'
-            : 'Type your accomplishment counts in your column (highlighted). They appear on the admin board automatically.'
+              ? 'Set each person’s targets below. Use Add to increase a count, or Update to replace it.'
+              : 'Use Add to increase a count, or Update to replace it. Blue means the target is met; orange means it is not yet.'
+            : 'Use Add or Update in your column (highlighted). Changes appear on the admin board automatically.'
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -425,23 +444,24 @@ export default function TallyBoard() {
       <Alert tone={isTargetView ? 'warning' : 'info'}>
         {isTargetView ? (
           <>
-            Enter <strong>targets</strong> for each person in the columns below. Changes save
-            automatically.
+            Enter <strong>targets</strong> for each person. Use <strong>Add</strong> or{' '}
+            <strong>Update</strong>. Changes save automatically.
           </>
         ) : isAdmin ? (
           <>
-            Type counts for any staff for January–December {year}. They save automatically.
-            Blue means the target is met; orange means not yet.
+            Use <strong>Add</strong> or <strong>Update</strong> for any staff for January–December{' '}
+            {year}. Changes save automatically. Blue means the target is met; orange means not yet.
           </>
         ) : myStaffId ? (
           <>
-            Your column is highlighted. Type your counts for January–December {year}. They
-            save automatically. Blue means the target is met; orange means not yet.
+            Your column is highlighted. Use <strong>Add</strong> or <strong>Update</strong> for
+            January–December {year}. Changes save automatically. Blue means the target is met;
+            orange means not yet.
           </>
         ) : (
           <>
             Your login is not linked to a staff account yet. Ask an admin to add you on{' '}
-            <strong>Users</strong> so you can type your accomplishments.
+            <strong>Users</strong> so you can add your accomplishments.
           </>
         )}
       </Alert>
@@ -538,7 +558,6 @@ export default function TallyBoard() {
                         const targetValue = row?.target ?? ''
                         const display = formatCount(value)
                         const editable = canEditCell(person.id)
-                        const { primary } = personTableHeader(person)
                         const tone = isTargetView
                           ? 'neutral'
                           : statusTone(row?.accomplished, targetValue)
@@ -551,32 +570,20 @@ export default function TallyBoard() {
                             }`}
                           >
                             <div className="tally-cell">
+                              <p
+                                className={`tally-cell-readonly rounded-lg bg-white px-2 py-1.5 text-base font-bold ${
+                                  zero && tone === 'neutral' ? 'text-slate-400' : TONE_TEXT[tone]
+                                }`}
+                              >
+                                {display}
+                              </p>
                               {editable ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.1"
-                                  value={value}
-                                  onChange={(event) =>
-                                    updateCell(person.id, item.id, event.target.value)
-                                  }
-                                  onBlur={flushAutoSave}
-                                  className={`field mx-auto w-20 px-2 py-1.5 text-center font-bold ${TONE_TEXT[tone]}`}
-                                  placeholder="0"
-                                  aria-label={`${primary} Jan–Dec ${
-                                    isTargetView ? 'target' : 'accomplished'
-                                  }`}
+                                <CountActions
+                                  onAdd={() => openCountModal('add', person, item)}
+                                  onUpdate={() => openCountModal('update', person, item)}
                                 />
                               ) : (
-                                <p
-                                  className={`tally-cell-readonly rounded-lg bg-white/70 px-2 py-1.5 text-base font-bold ${
-                                    zero && tone === 'neutral'
-                                      ? 'text-slate-400'
-                                      : TONE_TEXT[tone]
-                                  }`}
-                                >
-                                  {display}
-                                </p>
+                                <div className="count-actions print-hide" aria-hidden="true" />
                               )}
                               <TallyTargetLine
                                 show={!isTargetView}
@@ -610,6 +617,17 @@ export default function TallyBoard() {
         </section>
       ))}
 
+      {countModal && (
+        <CountEditModal
+          mode={countModal.mode}
+          title={countModal.title}
+          detail={countModal.detail}
+          current={countModal.current}
+          saving={saving}
+          onClose={() => setCountModal(null)}
+          onConfirm={confirmCountModal}
+        />
+      )}
       <Toast message={toast} phase={toastPhase} tone={toastTone} />
     </div>
   )

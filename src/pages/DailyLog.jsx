@@ -17,6 +17,7 @@ import {
   yearTotal,
 } from '../lib/daily'
 import { Alert, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
+import CountEditModal, { CountActions } from '../components/CountEditModal'
 
 export default function DailyLog() {
   const { user } = useAuth()
@@ -32,11 +33,22 @@ export default function DailyLog() {
   const [loading, setLoading] = useState(!initialCache)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [countModal, setCountModal] = useState(null)
   const userRef = useRef(user)
+  const quantitiesRef = useRef({})
+  const notesRef = useRef({})
 
   useEffect(() => {
     userRef.current = user
   }, [user])
+
+  useEffect(() => {
+    quantitiesRef.current = quantities
+  }, [quantities])
+
+  useEffect(() => {
+    notesRef.current = notes
+  }, [notes])
 
   async function load({ silent = false } = {}) {
     const currentUser = userRef.current
@@ -128,7 +140,10 @@ export default function DailyLog() {
     return map
   }, [logs, workDate])
 
-  async function save() {
+  const yearLabel = yearCaption(workDate)
+  const dayLabel = formatWorkDate(workDate)
+
+  async function save(nextQuantities = quantitiesRef.current) {
     if (!period || !staff || !user) return
     setSaving(true)
     setError('')
@@ -138,8 +153,8 @@ export default function DailyLog() {
         .filter((item) => item.id && !item.pending)
         .map((item) => ({
           item_id: item.id,
-          quantity: quantities[item.id],
-          notes: notes[item.id],
+          quantity: nextQuantities[item.id],
+          notes: notesRef.current[item.id],
           log_id: logByItem[item.id]?.id,
           keep: Boolean(logByItem[item.id]),
         }))
@@ -166,17 +181,37 @@ export default function DailyLog() {
     }
   }
 
-  if (loading) return <LoadingState label="Loading daily log…" />
+  function openCountModal(mode, item) {
+    if (!staff || item.pending || !item.id) return
+    setCountModal({
+      mode,
+      itemId: item.id,
+      current: toCount(quantities[item.id]),
+      title: item.output || 'Output',
+      detail: `${dayLabel} · ${yearLabel}`,
+    })
+  }
 
-  const yearLabel = yearCaption(workDate)
-  const dayLabel = formatWorkDate(workDate)
+  async function confirmCountModal(nextValue) {
+    if (!countModal) return
+    const nextQuantities = {
+      ...quantitiesRef.current,
+      [countModal.itemId]: nextValue ? String(nextValue) : '',
+    }
+    quantitiesRef.current = nextQuantities
+    setQuantities(nextQuantities)
+    setCountModal(null)
+    await save(nextQuantities)
+  }
+
+  if (loading) return <LoadingState label="Loading daily log…" />
 
   return (
     <div className="space-y-6 pb-8">
       <PageHeader
         kicker={period?.office_name || 'E-Learning Ville'}
         title="Daily accomplishments"
-        description="Choose a date, type how many you finished for each core function, then save. Rows follow My OPCR — added or removed lines show here after you save the form."
+        description="Choose a date, then Add or Update the count for each output. Counts save from the modal. Use Save for notes. Rows follow My OPCR — added or removed lines show here after you save the form."
       />
 
       <section className="card p-5">
@@ -204,7 +239,7 @@ export default function DailyLog() {
               </p>
             </div>
           </div>
-          <Button className="h-11 min-w-[8.5rem] shrink-0" disabled={saving || !staff} onClick={save}>
+          <Button className="h-11 min-w-[8.5rem] shrink-0" disabled={saving || !staff} onClick={() => void save()}>
             <Save size={16} />
             {saving ? 'Saving…' : 'Save'}
           </Button>
@@ -215,10 +250,10 @@ export default function DailyLog() {
               <span className="font-bold text-teal-800">1.</span> Pick the date
             </li>
             <li>
-              <span className="font-bold text-teal-800">2.</span> Type this day’s count
+              <span className="font-bold text-teal-800">2.</span> Add or update this day’s count
             </li>
             <li>
-              <span className="font-bold text-teal-800">3.</span> Click Save
+              <span className="font-bold text-teal-800">3.</span> Save notes if you typed any
             </li>
           </ol>
         )}
@@ -287,24 +322,17 @@ export default function DailyLog() {
                             </span>
                           )}
                         </td>
-                        <td className="px-2 py-2.5 align-middle">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            disabled={!staff || item.pending}
-                            value={item.id ? (quantities[item.id] ?? '') : ''}
-                            onChange={(event) => {
-                              if (!item.id) return
-                              setQuantities((current) => ({
-                                ...current,
-                                [item.id]: event.target.value,
-                              }))
-                            }}
-                            className="field mx-auto h-10 w-20 px-1 text-center text-base font-bold"
-                            placeholder="0"
-                            aria-label={`${item.output || 'Output'} count for ${dayLabel}`}
-                          />
+                        <td className="px-2 py-2.5 align-middle text-center">
+                          <p className="daily-count-value text-base font-bold text-slate-900">
+                            {formatCount(typed)}
+                          </p>
+                          {staff && !item.pending && item.id ? (
+                            <CountActions
+                              disabled={saving}
+                              onAdd={() => openCountModal('add', item)}
+                              onUpdate={() => openCountModal('update', item)}
+                            />
+                          ) : null}
                         </td>
                         <td className="px-2 py-2.5 align-middle text-center">
                           <span className="text-base font-bold text-teal-800">
@@ -333,6 +361,17 @@ export default function DailyLog() {
         ))}
       </div>
 
+      {countModal && (
+        <CountEditModal
+          mode={countModal.mode}
+          title={countModal.title}
+          detail={countModal.detail}
+          current={countModal.current}
+          saving={saving}
+          onClose={() => setCountModal(null)}
+          onConfirm={confirmCountModal}
+        />
+      )}
       <Toast message={toast} phase={toastPhase} />
     </div>
   )

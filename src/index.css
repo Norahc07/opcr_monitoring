@@ -114,7 +114,7 @@ select {
 
 .daily-col-count,
 .daily-col-total {
-  width: 5.25rem;
+  width: 7.5rem;
 }
 
 .daily-col-note {
@@ -180,7 +180,7 @@ select {
 }
 
 .tally-board .tally-col-staff {
-  width: 7.25rem;
+  width: 8rem;
 }
 
 .tally-board .tally-staff-cell,
@@ -194,7 +194,7 @@ select {
   align-items: center;
   justify-content: flex-start;
   gap: 0.25rem;
-  min-height: 3.35rem;
+  min-height: 4.55rem;
 }
 
 .tally-board .tally-cell-target {
@@ -214,6 +214,45 @@ select {
 
 .tally-board .tally-cell-readonly {
   margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.count-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 1.15rem;
+}
+
+.count-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+  border: 0;
+  background: transparent;
+  padding: 0 0.12rem;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15rem;
+  color: #0f766e;
+  cursor: pointer;
+}
+
+.count-action-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.count-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.daily-count-value {
+  margin: 0;
+  min-height: 1.75rem;
   display: flex;
   align-items: center;
   justify-content: center;
