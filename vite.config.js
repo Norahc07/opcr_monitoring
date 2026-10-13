@@ -14,6 +14,8 @@ export default defineConfig({
         'favicon.svg',
         'logomark.png',
         'elearningville-logo.png',
+        'elearning_logo.png',
+        'mauban_logo.jpg',
         'apple-touch-icon.png',
         'pwa-192.png',
         'pwa-512.png',
@@ -54,7 +56,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff2}'],
         globIgnores: ['**/node_modules/**/*', 'sw.js', 'workbox-*.js'],
         navigateFallback: 'index.html',
         runtimeCaching: [

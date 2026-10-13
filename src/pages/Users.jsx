@@ -4,7 +4,7 @@ import { useAuth } from '../context/useAuth'
 import { supabase } from '../lib/supabase'
 import { writeAudit } from '../lib/audit'
 import { Alert, Avatar, Button, LoadingState, PageHeader, Toast, useToast } from '../components/ui'
-import { pingLastSeen, presenceInfo } from '../lib/presence'
+import { loadLastSeenMap, pingLastSeen, presenceInfo } from '../lib/presence'
 
 const emptyStaff = {
   email: '',
@@ -93,25 +93,21 @@ export default function Users() {
         .not('user_id', 'is', null)
         .order('sort_order', { ascending: true }),
       supabase.rpc('admin_list_logins'),
-      supabase.from('profiles').select('id, avatar_url, office, last_seen_at'),
+      supabase.from('profiles').select('id, avatar_url, office'),
     ])
     if (staffError) throw staffError
 
     const notices = []
     let profileRows = profileResult.data
-    if (profileResult.error) {
-      if (String(profileResult.error.message || '').includes('last_seen_at')) {
-        notices.push(
-          'Online status is not set up yet. Open Supabase → SQL Editor → paste and run supabase/user_presence.sql, then refresh this page.',
-        )
-        const { data: fallbackRows, error: fallbackError } = await supabase
-          .from('profiles')
-          .select('id, avatar_url, office')
-        if (fallbackError) throw fallbackError
-        profileRows = fallbackRows
-      } else {
-        throw profileResult.error
-      }
+    if (profileResult.error) throw profileResult.error
+
+    const presence = await loadLastSeenMap(supabase)
+    if (presence.missingSetup) {
+      notices.push(
+        'Online status is not set up yet. Open Supabase → SQL Editor → paste and run supabase/user_presence.sql, then refresh this page.',
+      )
+    } else if (presence.error) {
+      notices.push(presence.error.message)
     }
 
     let logins = loginRows || []
@@ -134,7 +130,7 @@ export default function Users() {
       ),
     )
     const photoById = new Map((profileRows || []).map((row) => [row.id, row.avatar_url || '']))
-    const seenById = new Map((profileRows || []).map((row) => [row.id, row.last_seen_at || null]))
+    const seenById = presence.map
     setStaffs(
       (staffRows || []).map((row) => ({
         ...row,

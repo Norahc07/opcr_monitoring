@@ -4,6 +4,7 @@ import {
   ChevronUp,
   ClipboardList,
   CalendarDays,
+  FileSpreadsheet,
   LayoutGrid,
   ListChecks,
   LogOut,
@@ -20,8 +21,9 @@ const TallyBoard = lazy(() => import('../pages/TallyBoard'))
 const MyTally = lazy(() => import('../pages/MyTally'))
 const DailyLog = lazy(() => import('../pages/DailyLog'))
 const MyOpcr = lazy(() => import('../pages/MyOpcr'))
+const AccomplishmentReport = lazy(() => import('../pages/AccomplishmentReport'))
 
-const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr'])
+const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr', '/accomplishment'])
 
 const linkClass = ({ isActive }) =>
   `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
@@ -71,6 +73,10 @@ export default function Layout() {
           <NavLink to="/daily" className={linkClass}>
             <CalendarDays size={18} />
             Daily log
+          </NavLink>
+          <NavLink to="/accomplishment" className={linkClass}>
+            <FileSpreadsheet size={18} />
+            Accomplishment
           </NavLink>
           <NavLink to="/opcr" className={linkClass}>
             <ClipboardList size={18} />
@@ -134,6 +140,11 @@ export default function Layout() {
           <KeepAlive active={pathname === '/opcr'}>
             <LazyPage label="Loading My OPCR…">
               <MyOpcr />
+            </LazyPage>
+          </KeepAlive>
+          <KeepAlive active={pathname === '/accomplishment'}>
+            <LazyPage label="Loading accomplishment report…">
+              <AccomplishmentReport />
             </LazyPage>
           </KeepAlive>
           {!showWorkPage && <Outlet />}

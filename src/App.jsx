@@ -34,6 +34,7 @@ export default function App() {
           <Route path="/tally" element={<Navigate to="/my-tally" replace />} />
           <Route path="/opcr" element={<WorkRoutePlaceholder />} />
           <Route path="/daily" element={<WorkRoutePlaceholder />} />
+          <Route path="/accomplishment" element={<WorkRoutePlaceholder />} />
           <Route
             path="/profile"
             element={

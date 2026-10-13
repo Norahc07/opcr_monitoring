@@ -103,34 +103,110 @@ select {
   gap: 1rem;
 }
 
+.function-split-grid.is-single {
+  grid-template-columns: 1fr;
+}
+
+.daily-log {
+  width: 100%;
+}
+
+.daily-toolbar {
+  display: grid;
+  grid-template-columns: auto auto minmax(16rem, 1fr);
+  align-items: end;
+  gap: 0.85rem 1.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.daily-toolbar-field {
+  min-width: 0;
+}
+
+.daily-toolbar-field label {
+  margin: 0 0 0.4rem;
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.daily-toolbar-control {
+  display: flex;
+  height: 2.75rem;
+  align-items: center;
+}
+
+.daily-toolbar-control .field {
+  width: 13.5rem;
+  height: 2.75rem;
+}
+
+.daily-toolbar-control .inline-flex {
+  height: 2.75rem;
+  align-items: stretch;
+  padding: 0.2rem;
+}
+
+.daily-toolbar-control .inline-flex button {
+  padding: 0 0.95rem;
+}
+
+.daily-toolbar-day {
+  display: flex;
+  min-width: 0;
+  height: 2.75rem;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.daily-toolbar-day strong {
+  display: block;
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-toolbar-day span {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .daily-log-table {
   width: 100%;
   table-layout: fixed;
 }
 
 .daily-col-output {
-  width: 34%;
+  width: auto;
 }
 
 .daily-col-count,
 .daily-col-total {
-  width: 7.5rem;
+  width: 8.5rem;
 }
 
-.daily-col-note {
-  width: 10.5rem;
+.daily-log .function-split-grid.is-single .daily-col-count,
+.daily-log .function-split-grid.is-single .daily-col-total {
+  width: 11rem;
 }
 
 .daily-log-table th,
 .daily-log-table td {
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-.daily-note-field {
-  display: block;
-  width: 100%;
-  min-width: 0;
 }
 
 .profile-page .field {
@@ -163,8 +239,78 @@ select {
   width: 6.75rem;
 }
 
-.my-tally .tally-col-progress {
-  width: 5.5rem;
+.semester-switch-wrap {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.semester-switch-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.semester-switch {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.2rem;
+  padding: 0.28rem;
+  border-radius: 1.15rem;
+  background: #fff;
+  box-shadow: 0 8px 20px rgb(15 78 74 / 0.08);
+  border: 1px solid rgb(216 228 225 / 0.95);
+}
+
+.semester-switch button {
+  display: flex;
+  min-width: 10.25rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  border: 0;
+  border-radius: 0.95rem;
+  background: transparent;
+  padding: 0.62rem 1.05rem 0.68rem;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.semester-switch button:hover:not(.is-active) {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.semester-switch button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.semester-switch button.is-active {
+  background: #0f766e;
+  color: #fff;
+  box-shadow: 0 6px 14px rgb(15 118 110 / 0.28);
+}
+
+.semester-switch-term {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.semester-switch-range {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.15;
 }
 
 .tally-board .tally-table {
@@ -237,11 +383,12 @@ select {
   font-size: 10px;
   font-weight: 700;
   line-height: 1.15rem;
-  color: #0f766e;
+  color: rgb(15 118 110 / 0.55);
   cursor: pointer;
 }
 
 .count-action-btn:hover:not(:disabled) {
+  color: #0f766e;
   text-decoration: underline;
 }
 
@@ -915,11 +1062,340 @@ input.field[type='number']::-webkit-inner-spin-button {
   transition: width 0.25s ease;
 }
 
+.ar-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ar-toolbar-kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.ar-toolbar-title {
+  margin: 0.15rem 0 0;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0f172a;
+}
+
+.ar-toolbar-note {
+  margin: 0.35rem 0 0;
+  max-width: 40rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.ar-workbook {
+  overflow-x: auto;
+  border: 1px solid #d4d4d4;
+  background: #f3f3f3;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 0.08);
+}
+
+.ar-sheet {
+  display: flex;
+  min-width: 980px;
+  flex-direction: column;
+  padding: 0.9rem 1rem 0.85rem;
+  background: #fff;
+  color: #111;
+  font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+}
+
+.ar-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.85rem;
+  margin-bottom: 0.7rem;
+}
+
+.ar-head-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.ar-head-logo {
+  justify-content: flex-start;
+}
+
+.ar-seal {
+  width: 5.15rem;
+  height: 5.15rem;
+  object-fit: contain;
+}
+
+.ar-brand {
+  width: 13.25rem;
+  height: auto;
+  object-fit: contain;
+}
+
+.ar-head-center {
+  min-width: 0;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.ar-head-center p,
+.ar-head-center h2,
+.ar-range {
+  margin: 0;
+  text-align: center;
+}
+
+.ar-head-center p {
+  font-size: 0.92rem;
+}
+
+.ar-head-center h2 {
+  margin: 0.55rem 0 0.15rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.ar-range {
+  font-size: 0.95rem;
+}
+
+.ar-table-wrap {
+  min-width: 0;
+}
+
+.ar-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.78rem;
+}
+
+.ar-col-date {
+  width: 16.5%;
+}
+
+.ar-col-work {
+  width: 10.4375%;
+}
+
+.ar-table th,
+.ar-table td {
+  border: 1px solid #b4c7dc;
+  padding: 0.38rem 0.4rem;
+  vertical-align: middle;
+}
+
+.ar-table th {
+  background: rgb(184 212 238 / 0.38);
+  font-weight: 700;
+  text-align: center;
+  color: #1e293b;
+}
+
+.ar-table td {
+  min-height: 1.7rem;
+  text-align: center;
+  line-height: 1.25;
+  color: #111;
+}
+
+.ar-col-draggable {
+  position: relative;
+  cursor: grab;
+}
+
+.ar-col-head {
+  display: flex;
+  min-height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1.15rem 0.35rem;
+}
+
+.ar-col-title {
+  display: block;
+  width: 100%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+}
+
+.ar-col-draggable.is-dragging {
+  cursor: grabbing;
+  opacity: 0.55;
+}
+
+.ar-col-draggable.is-drop {
+  box-shadow: inset 3px 0 0 rgb(15 118 110 / 0.45);
+}
+
+.ar-col-edit {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  z-index: 1;
+  display: inline-flex;
+  width: 1.2rem;
+  height: 1.2rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(100 116 139 / 0.7);
+  cursor: pointer;
+}
+
+.ar-col-edit:hover {
+  background: rgb(255 255 255 / 0.7);
+  color: #0f766e;
+}
+
+.ar-cell {
+  display: flex;
+  min-height: 2.35rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.12rem;
+}
+
+.ar-cell-text {
+  margin: 0;
+  min-height: 1rem;
+  white-space: pre-line;
+}
+
+.ar-table td.ar-date {
+  background: #fff;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.ar-off td,
+.ar-holiday td {
+  padding-top: 0.12rem;
+  padding-bottom: 0.12rem;
+  min-height: 0;
+  line-height: 1.1;
+}
+
+.ar-off .ar-off-cell {
+  background: #d0d0d0;
+}
+
+.ar-off-cell {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ar-holiday .ar-holiday-cell {
+  background: rgb(187 247 208 / 0.45);
+}
+
+.ar-holiday-cell {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #14532d;
+}
+
+.ar-signs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  width: 72%;
+  margin: 0 auto;
+  padding: 1.85rem 0 0.55rem;
+  text-align: center;
+  font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+}
+
+.ar-sign-name {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.ar-sign-title {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+}
+
+.ar-period-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.ar-period-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid #d8e4e1;
+  border-radius: 0.9rem;
+  background: #fff;
+  color: #0f766e;
+}
+
+.ar-period-btn:hover:not(:disabled) {
+  background: #ecfdf8;
+}
+
+.ar-period-btn:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+}
+
+.ar-period-label {
+  min-width: 14rem;
+  margin: 0;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
 @media print {
-  /* Philippine long bond paper (8.5" × 13"), landscape */
+  /* Philippine long bond paper (8.5" × 13"), landscape. Margin 0 hides Chrome date/URL/page headers. */
   @page {
     size: 13in 8.5in;
-    margin: 0.32in 0.32in;
+    margin: 0;
+  }
+
+  @page {
+    @top-left { content: none; }
+    @top-center { content: none; }
+    @top-right { content: none; }
+    @bottom-left { content: none; }
+    @bottom-center { content: none; }
+    @bottom-right { content: none; }
   }
 
   html,
@@ -929,6 +1405,10 @@ input.field[type='number']::-webkit-inner-spin-button {
     background: #fff;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  body:not(.printing-accomplishment) {
+    padding: 0.32in;
   }
 
   .card {
@@ -1415,5 +1895,210 @@ input.field[type='number']::-webkit-inner-spin-button {
   body.printing-tally .tally-board .rounded-lg {
     padding: 0 !important;
     background: transparent !important;
+  }
+
+  html:has(body.printing-accomplishment),
+  html:has(body.printing-accomplishment) body,
+  html:has(body.printing-accomplishment) #root,
+  html:has(body.printing-accomplishment) main,
+  html:has(body.printing-accomplishment) .ar-page {
+    box-sizing: border-box !important;
+    width: 13in !important;
+    height: 8.5in !important;
+    max-width: 13in !important;
+    max-height: 8.5in !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
+  body.printing-accomplishment {
+    padding: 0 !important;
+  }
+
+  body.printing-accomplishment .hidden {
+    display: none !important;
+  }
+
+  body.printing-accomplishment main > *:not(:has(.ar-sheet)) {
+    display: none !important;
+  }
+
+  body.printing-accomplishment .ar-page {
+    gap: 0;
+  }
+
+  body.printing-accomplishment .ar-print-page,
+  body.printing-accomplishment .ar-workbook,
+  body.printing-accomplishment .ar-sheet {
+    box-sizing: border-box;
+    width: 13in;
+    min-width: 0 !important;
+    height: 8.5in;
+    max-height: 8.5in;
+    overflow: hidden;
+    border: 0;
+    box-shadow: none;
+    background: #fff;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    page-break-after: avoid;
+    page-break-before: avoid;
+  }
+
+  body.printing-accomplishment .ar-sheet {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    padding: 0.42in 0.4in 0.38in;
+    --ar-short-h: 0.2in;
+    --ar-thead-h: 0.32in;
+  }
+
+  body.printing-accomplishment .ar-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.32in;
+    height: auto;
+    margin: 0 0 0.18in;
+  }
+
+  body.printing-accomplishment .ar-head-center {
+    min-width: 0;
+    text-align: center;
+  }
+
+  body.printing-accomplishment .ar-head-center p,
+  body.printing-accomplishment .ar-head-center h2,
+  body.printing-accomplishment .ar-range {
+    text-align: center;
+  }
+
+  body.printing-accomplishment .ar-seal {
+    width: 0.78in;
+    height: 0.78in;
+  }
+
+  body.printing-accomplishment .ar-brand {
+    width: 2.3in;
+  }
+
+  body.printing-accomplishment .ar-head-center p,
+  body.printing-accomplishment .ar-range {
+    font-size: 9.5pt;
+    line-height: 1.22;
+  }
+
+  body.printing-accomplishment .ar-head-center h2 {
+    margin: 0.08in 0 0.05in;
+    font-size: 17pt;
+    line-height: 1.1;
+  }
+
+  body.printing-accomplishment .ar-table-wrap {
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body.printing-accomplishment .ar-table {
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 8.5pt;
+  }
+
+  body.printing-accomplishment .ar-table thead {
+    display: table-header-group;
+  }
+
+  body.printing-accomplishment .ar-table thead tr {
+    height: var(--ar-thead-h);
+  }
+
+  body.printing-accomplishment .ar-table tbody {
+    height: calc(100% - var(--ar-thead-h));
+  }
+
+  body.printing-accomplishment .ar-table tbody tr {
+    height: calc(
+      (100% - var(--ar-thead-h) - (var(--ar-short-count, 0) * var(--ar-short-h))) /
+        var(--ar-work-count, 11)
+    );
+  }
+
+  body.printing-accomplishment .ar-table tbody tr.ar-off,
+  body.printing-accomplishment .ar-table tbody tr.ar-holiday {
+    height: var(--ar-short-h);
+  }
+
+  body.printing-accomplishment .ar-table th,
+  body.printing-accomplishment .ar-table td {
+    height: inherit;
+    min-height: 0;
+    padding: 0.03in 0.05in;
+    border: 1px solid #7f9db9;
+    vertical-align: middle;
+  }
+
+  body.printing-accomplishment .ar-table tbody tr.ar-off td,
+  body.printing-accomplishment .ar-table tbody tr.ar-holiday td {
+    padding-top: 0.015in;
+    padding-bottom: 0.015in;
+    font-size: 8pt;
+  }
+
+  body.printing-accomplishment .ar-table td.ar-date {
+    font-size: 8.5pt;
+  }
+
+  body.printing-accomplishment .ar-cell {
+    min-height: 0 !important;
+    height: 100%;
+    justify-content: center;
+    gap: 0;
+  }
+
+  body.printing-accomplishment .ar-cell-text {
+    min-height: 0 !important;
+    font-size: 8pt;
+    line-height: 1.15;
+  }
+
+  body.printing-accomplishment .ar-holiday .ar-holiday-cell {
+    background: rgb(187 247 208 / 0.45) !important;
+  }
+
+  body.printing-accomplishment .ar-col-head {
+    display: block;
+    min-height: 0;
+    padding: 0.02in 0;
+  }
+
+  body.printing-accomplishment .ar-col-title {
+    font-size: 8.5pt;
+    font-weight: 700;
+  }
+
+  body.printing-accomplishment .ar-signs {
+    display: grid;
+    align-content: start;
+    width: 72%;
+    height: auto;
+    min-height: 0;
+    margin: 0 auto;
+    padding: 0.4in 0 0;
+    background: #fff;
+  }
+
+  body.printing-accomplishment .ar-sign-name {
+    font-size: 10.5pt;
+  }
+
+  body.printing-accomplishment .ar-sign-title {
+    margin-top: 0.04in;
+    font-size: 8.5pt;
   }
 }

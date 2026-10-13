@@ -1,4 +1,14 @@
-import { formatCount, getActivePeriod, getLinkedStaff, hydrateOpcrEntry, itemsFromOpcrEntries, loadCanonicalOpcrEntries, missingSemesterError, toCount } from './opcr'
+import {
+  assignedItemIdSet,
+  buildBoardRows,
+  formatCount,
+  itemsVisibleToPerson,
+  missingSemesterError,
+  loadTallyContext,
+  TALLY_PERIOD_ID,
+  tallyKey,
+  toCount,
+} from './opcr'
 
 export function todayValue() {
   const now = new Date()
@@ -103,58 +113,42 @@ export function missingDailyError(error) {
 }
 
 export async function loadDailyContext(supabase, userId) {
-  const period = await getActivePeriod(supabase)
-  const staff = await getLinkedStaff(supabase, userId)
+  const context = await loadTallyContext(supabase, { userId })
+  const { period, staff, items, tallies, personItemByOutput } = context
   if (!period) {
     return { period: null, staff, items: [], logs: [] }
   }
 
-  const [{ data: logs, error: logsError }, { data: form, error: formError }] = await Promise.all([
-      staff?.id
-        ? supabase
-            .from('opcr_daily_logs')
-            .select('*')
-            .eq('period_id', period.id)
-            .eq('staff_id', staff.id)
-            .order('work_date', { ascending: false })
-            .limit(400)
-        : Promise.resolve({ data: [], error: null }),
-      userId
-        ? supabase
-            .from('opcr_forms')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('period_id', period.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-    ])
+  const { data: logs, error: logsError } = staff?.id
+    ? await supabase
+        .from('opcr_daily_logs')
+        .select('*')
+        .eq('period_id', period.id)
+        .eq('staff_id', staff.id)
+        .order('work_date', { ascending: false })
+        .limit(400)
+    : { data: [], error: null }
 
   if (logsError) throw missingDailyError(logsError)
-  if (formError) throw formError
 
-  let entries = []
-  if (form?.id) {
-    const { data: entryRows, error: entriesError } = await supabase
-      .from('opcr_entries')
-      .select('*, opcr_items(*)')
-      .eq('form_id', form.id)
-    if (entriesError) throw entriesError
-    entries = (entryRows || []).map(hydrateOpcrEntry).sort(
-      (a, b) => (a.section - b.section) || (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0),
-    )
-  }
-
-  const canonical = await loadCanonicalOpcrEntries(supabase, period.id)
-  const sourceEntries = canonical.length ? canonical : entries
-  const items = itemsFromOpcrEntries(sourceEntries, period.id)
-  const activeItemIds = new Set(items.map((item) => item.id).filter(Boolean))
-  const filteredLogs = (logs || []).filter((row) => activeItemIds.has(row.item_id))
+  const visibleItems = itemsVisibleToPerson(staff, items, tallies, personItemByOutput, logs || [])
+  const activeItemIds = assignedItemIdSet(staff, visibleItems, personItemByOutput)
+  const boardRows = staff
+    ? buildBoardRows([staff], visibleItems, tallies, personItemByOutput)
+    : {}
+  const withBoard = visibleItems.map((item) => {
+    const key = staff?.id ? tallyKey(staff.id, item.id, TALLY_PERIOD_ID) : item.id
+    return {
+      ...item,
+      board_actual: toCount(boardRows[key]?.accomplished),
+    }
+  })
 
   return {
     period,
     staff,
-    items,
-    logs: filteredLogs,
+    items: withBoard,
+    logs: (logs || []).filter((row) => activeItemIds.has(row.item_id)),
   }
 }
 
@@ -219,7 +213,7 @@ export function groupDailyHistory(logs, items) {
 }
 
 const DAILY_CACHE_KEY = 'opcr-daily-log'
-const DAILY_CACHE_VERSION = 'opcr-src-v3'
+const DAILY_CACHE_VERSION = 'opcr-src-v6'
 
 export function readDailyCache(userId) {
   if (!userId) return null

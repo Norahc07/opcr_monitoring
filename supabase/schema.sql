@@ -282,20 +282,39 @@ set search_path = public
 as $$
 declare
   seen timestamptz := now();
+  uid uuid := auth.uid();
 begin
-  if auth.uid() is null then
+  if uid is null then
     raise exception 'Not authenticated';
   end if;
 
-  update public.profiles
-  set last_seen_at = seen
-  where id = auth.uid();
-
-  if not found then
-    raise exception 'Profile not found';
-  end if;
+  insert into public.profiles (id, last_seen_at)
+  values (uid, seen)
+  on conflict (id) do update
+    set last_seen_at = seen;
 
   return seen;
+end;
+$$;
+
+create or replace function public.list_last_seen()
+returns table (id uuid, last_seen_at timestamptz)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_admin() then
+    return query
+    select p.id, p.last_seen_at
+    from public.profiles p;
+  else
+    return query
+    select p.id, p.last_seen_at
+    from public.profiles p
+    where p.id = auth.uid();
+  end if;
 end;
 $$;
 
@@ -678,6 +697,7 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.my_staff_id() to authenticated;
 grant execute on function public.delete_unused_opcr_item(uuid) to authenticated;
 grant execute on function public.touch_last_seen() to authenticated;
+grant execute on function public.list_last_seen() to authenticated;
 
 -- After the first admin exists, run supabase/admin_users.sql and supabase/staffs.sql
 -- so the Users page lists real login accounts as Staffs.

@@ -61,9 +61,10 @@ export async function pingLastSeen(client, userId) {
   const { data, error } = await client.rpc('touch_last_seen')
   if (!error && data) return { ok: true, at: data, missingSetup: false }
 
+  const seen = new Date().toISOString()
   const { data: row, error: updateError } = await client
     .from('profiles')
-    .update({ last_seen_at: new Date().toISOString() })
+    .update({ last_seen_at: seen })
     .eq('id', userId)
     .select('last_seen_at')
     .maybeSingle()
@@ -72,10 +73,47 @@ export async function pingLastSeen(client, userId) {
     return { ok: true, at: row.last_seen_at, missingSetup: false }
   }
 
-  const fail = error || updateError
+  const { data: created, error: insertError } = await client
+    .from('profiles')
+    .upsert({ id: userId, last_seen_at: seen }, { onConflict: 'id' })
+    .select('last_seen_at')
+    .maybeSingle()
+
+  if (!insertError && created?.last_seen_at) {
+    return { ok: true, at: created.last_seen_at, missingSetup: false }
+  }
+
+  const fail = error || updateError || insertError
   return {
     ok: false,
     missingSetup: isMissingPresenceSetup(fail),
     error: fail,
+  }
+}
+
+export async function loadLastSeenMap(client) {
+  const map = new Map()
+  if (!client) return { map, missingSetup: false, error: null }
+
+  const rpc = await client.rpc('list_last_seen')
+  if (!rpc.error) {
+    for (const row of rpc.data || []) {
+      if (row?.id) map.set(row.id, row.last_seen_at || null)
+    }
+    return { map, missingSetup: false, error: null }
+  }
+
+  const query = await client.from('profiles').select('id, last_seen_at')
+  if (!query.error) {
+    for (const row of query.data || []) {
+      if (row?.id) map.set(row.id, row.last_seen_at || null)
+    }
+    return { map, missingSetup: false, error: null }
+  }
+
+  return {
+    map,
+    missingSetup: isMissingPresenceSetup(rpc.error) || isMissingPresenceSetup(query.error),
+    error: query.error || rpc.error,
   }
 }

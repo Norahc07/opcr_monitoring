@@ -86,7 +86,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const userId = session?.user?.id
-    if (!supabase || !userId) return undefined
+    if (!supabase || !userId || !profile?.id) return undefined
 
     let active = true
 
@@ -113,7 +113,7 @@ export function AuthProvider({ children }) {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [session?.user?.id])
+  }, [session?.user?.id, profile?.id])
 
   const value = useMemo(
     () => ({

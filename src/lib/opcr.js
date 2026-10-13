@@ -1432,6 +1432,51 @@ function rowHasTallyValue(row) {
   return toCount(row?.target) > 0 || toCount(row?.accomplished) > 0
 }
 
+function rowIsAccountable(row) {
+  return toCount(row?.target) > 0 && toCount(row?.accomplished) > 0
+}
+
+function itemLogIds(person, item, personItemByOutput = {}) {
+  const mapped = person?.id ? personItemByOutput[person.id]?.[outputKey(item?.output)] : null
+  return [...new Set([item?.id, item?.person_item_id, mapped].filter(Boolean))]
+}
+
+function itemHasDailyValue(item, person, personItemByOutput, logs) {
+  const ids = new Set(itemLogIds(person, item, personItemByOutput))
+  return (logs || []).some(
+    (row) => ids.has(row.item_id) && (toCount(row.quantity) > 0 || String(row.notes || '').trim()),
+  )
+}
+
+export function itemsVisibleToPerson(person, items, tallies, personItemByOutput = {}, logs = []) {
+  if (!person?.id) return []
+  const rows = buildBoardRows([person], items, tallies, personItemByOutput)
+  return (items || [])
+    .filter((item) => {
+      const row = tallyRowForPersonItem(rows, person, item, personItemByOutput)
+      return rowHasTallyValue(row) || itemHasDailyValue(item, person, personItemByOutput, logs)
+    })
+    .map((item) => ({
+      ...item,
+      person_item_id: personItemByOutput[person.id]?.[outputKey(item.output)] || item.id,
+    }))
+}
+
+export function itemsAssignedToPerson(person, items, tallies, personItemByOutput = {}, logs = []) {
+  return itemsVisibleToPerson(person, items, tallies, personItemByOutput, logs)
+}
+
+export function assignedItemIdSet(person, items, personItemByOutput = {}) {
+  const ids = new Set()
+  const mapped = person?.id ? personItemByOutput[person.id] || {} : {}
+  for (const item of items || []) {
+    if (item?.id) ids.add(item.id)
+    const personItemId = item?.person_item_id || mapped[outputKey(item?.output)]
+    if (personItemId) ids.add(personItemId)
+  }
+  return ids
+}
+
 function tallyRowForPersonItem(rows, person, item, personItemByOutput) {
   const outKey = outputKey(item.output)
   const personItemId = personItemByOutput[person.id]?.[outKey] || item.id
@@ -1462,7 +1507,7 @@ export function buildAlignedAccountableMap(people, items, tallies, personItemByO
     for (const person of roster) {
       if (!person?.id) continue
       const row = tallyRowForPersonItem(rows, person, item, personItemByOutput)
-      if (!rowHasTallyValue(row)) continue
+      if (!rowIsAccountable(row)) continue
       addUniqueName(names, seen, person)
     }
     putAlignedNames(map, item.id, names)
@@ -1475,7 +1520,7 @@ export function buildAlignedAccountableMap(people, items, tallies, personItemByO
 
   const leftover = {}
   for (const [key, row] of Object.entries(rows || {})) {
-    if (!rowHasTallyValue(row)) continue
+    if (!rowIsAccountable(row)) continue
     const itemId = row.item_id || String(key).split(':')[1]
     if (!itemId || map[itemId]?.length) continue
     const personId = String(key).split(':')[0]

@@ -10,12 +10,15 @@ export default function CountEditModal({
   detail,
   current = 0,
   saving = false,
+  showNote = false,
+  currentNote = '',
   onClose,
   onConfirm,
 }) {
   const inputRef = useRef(null)
   const isAdd = mode === 'add'
   const [amount, setAmount] = useState(isAdd ? '' : String(toCount(current) || ''))
+  const [note, setNote] = useState(isAdd ? '' : String(currentNote || ''))
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -24,12 +27,14 @@ export default function CountEditModal({
 
   const entered = toCount(amount)
   const nextValue = isAdd ? toCount(current) + entered : entered
-  const canSubmit = !saving && (isAdd ? entered > 0 : amount !== '')
+  const hasNote = Boolean(String(note || '').trim())
+  const canSubmit =
+    !saving && (isAdd ? entered > 0 || (showNote && hasNote) : amount !== '' || showNote)
 
   function submit(event) {
     event.preventDefault()
     if (!canSubmit) return
-    onConfirm(nextValue)
+    onConfirm(nextValue, note)
   }
 
   const node = (
@@ -91,6 +96,25 @@ export default function CountEditModal({
               {formatCount(current)} + {formatCount(entered)} = {formatCount(nextValue)}
             </span>
           </p>
+        ) : null}
+
+        {showNote ? (
+          <label className="mt-4 block">
+            <span className="mb-1 block text-xs font-medium text-slate-500">
+              {isAdd ? 'Note to add' : 'Note'}
+            </span>
+            {isAdd && currentNote ? (
+              <p className="mb-2 whitespace-pre-line text-xs text-slate-500">
+                Current note: {currentNote}
+              </p>
+            ) : null}
+            <textarea
+              className="field min-h-20"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder={isAdd ? 'Optional note' : 'Leave blank to clear'}
+            />
+          </label>
         ) : null}
 
         <div className="mt-5 flex justify-end gap-2">

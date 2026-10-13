@@ -14,13 +14,13 @@ import {
   saveDailyLogs,
   semesterCaption,
   semesterDateBounds,
-  semesterTotal,
   shiftToSemester,
   todayValue,
   workYear,
+  yearTotal,
   writeDailyCache,
 } from '../lib/daily'
-import { Alert, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
+import { Alert, EmptyState, LoadingState, PageHeader, Segmented, Toast, useToast } from '../components/ui'
 import CountEditModal, { CountActions } from '../components/CountEditModal'
 
 export default function DailyLog() {
@@ -48,8 +48,6 @@ export default function DailyLog() {
   const periodRef = useRef(period)
   const staffRef = useRef(staff)
   const savingRef = useRef(false)
-  const notesDirtyRef = useRef(false)
-  const noteTimer = useRef(null)
 
   useEffect(() => {
     userRef.current = user
@@ -89,7 +87,7 @@ export default function DailyLog() {
       setLoading(false)
       return
     }
-    if (silent && !force && (savingRef.current || notesDirtyRef.current)) return
+    if (silent && !force && savingRef.current) return
     if (!silent) setLoading(true)
     setError('')
     try {
@@ -144,17 +142,19 @@ export default function DailyLog() {
     return () => {
       active = false
       window.clearInterval(poll)
-      window.clearTimeout(noteTimer.current)
     }
   }, [user?.id])
 
   useEffect(() => {
     const dayLogs = logsForDate(logs, workDate)
+    const byItem = Object.fromEntries(dayLogs.map((row) => [row.item_id, row]))
     const nextQty = {}
     const nextNotes = {}
-    for (const row of dayLogs) {
-      nextQty[row.item_id] = String(toCount(row.quantity) || '')
-      nextNotes[row.item_id] = row.notes || ''
+    for (const item of items) {
+      const row = byItem[item.id] || byItem[item.person_item_id]
+      if (!row) continue
+      nextQty[item.id] = String(toCount(row.quantity) || '')
+      nextNotes[item.id] = row.notes || ''
     }
     setQuantities(nextQty)
     setNotes(nextNotes)
@@ -175,6 +175,10 @@ export default function DailyLog() {
     return map
   }, [logs, workDate])
 
+  function dayLogForItem(item) {
+    return logByItem[item.id] || logByItem[item.person_item_id] || null
+  }
+
   const dateBounds = semesterDateBounds(workYear(workDate) || new Date().getFullYear(), semester)
   const semLabel = semesterCaption(workDate, semester)
   const dayLabel = formatWorkDate(workDate)
@@ -194,15 +198,50 @@ export default function DailyLog() {
     try {
       const dayLogs = logsForDate(logsRef.current, currentDate)
       const logMap = Object.fromEntries(dayLogs.map((row) => [row.item_id, row]))
+      const year = workYear(currentDate)
+      const carryOn = currentDate === `${year}-01-01` ? `${year}-01-02` : `${year}-01-01`
+      const carryLogs = logsForDate(logsRef.current, carryOn)
+      const carryMap = Object.fromEntries(carryLogs.map((row) => [row.item_id, row]))
+      const carryRows = itemsRef.current
+        .filter((item) => item.id && !item.pending)
+        .map((item) => {
+          const ids = [...new Set([item.id, item.person_item_id].filter(Boolean))]
+          const dailySum = ids.reduce(
+            (sum, id) => sum + yearTotal(logsRef.current, id, currentDate),
+            0,
+          )
+          const gap = toCount(item.board_actual) - dailySum
+          if (gap <= 0) return null
+          const existing = carryMap[item.id] || carryMap[item.person_item_id]
+          return {
+            item_id: item.id,
+            quantity: toCount(existing?.quantity) + gap,
+            notes: existing?.notes || '',
+            log_id: existing?.id,
+          }
+        })
+        .filter(Boolean)
+      if (carryRows.length) {
+        await saveDailyLogs(supabase, {
+          periodId: currentPeriod.id,
+          staffId: currentStaff.id,
+          userId: currentUser.id,
+          workDate: carryOn,
+          rows: carryRows,
+        })
+      }
       const rows = itemsRef.current
         .filter((item) => item.id && !item.pending)
-        .map((item) => ({
-          item_id: item.id,
-          quantity: nextQuantities[item.id],
-          notes: notesRef.current[item.id],
-          log_id: logMap[item.id]?.id,
-          keep: Boolean(logMap[item.id]),
-        }))
+        .map((item) => {
+          const existing = logMap[item.id] || logMap[item.person_item_id]
+          return {
+            item_id: item.id,
+            quantity: nextQuantities[item.id],
+            notes: notesRef.current[item.id],
+            log_id: existing?.id,
+            keep: Boolean(existing),
+          }
+        })
       await saveDailyLogs(supabase, {
         periodId: currentPeriod.id,
         staffId: currentStaff.id,
@@ -210,7 +249,6 @@ export default function DailyLog() {
         workDate: currentDate,
         rows,
       })
-      notesDirtyRef.current = false
       await load({ silent: true, force: true })
       if (!quiet) {
         const filled = rows.filter((row) => toCount(row.quantity) > 0).length
@@ -230,26 +268,14 @@ export default function DailyLog() {
     }
   }
 
-  function scheduleNoteSave() {
-    notesDirtyRef.current = true
-    window.clearTimeout(noteTimer.current)
-    noteTimer.current = window.setTimeout(() => {
-      void save({ quiet: true })
-    }, 700)
-  }
-
   async function changeWorkDate(nextDate) {
     if (!nextDate || nextDate === workDateRef.current) return
-    window.clearTimeout(noteTimer.current)
-    await save({ quiet: true })
     setWorkDate(nextDate)
     setSemester(dailySemesterId(nextDate))
   }
 
   async function changeSemester(nextId) {
     if (nextId === semester || savingRef.current) return
-    window.clearTimeout(noteTimer.current)
-    await save({ quiet: true })
     setSemester(nextId)
     setWorkDate(shiftToSemester(workDateRef.current, nextId))
   }
@@ -260,82 +286,86 @@ export default function DailyLog() {
       mode,
       itemId: item.id,
       current: toCount(quantities[item.id]),
+      note: notes[item.id] || '',
       title: item.output || 'Output',
       detail: `${dayLabel} · ${semLabel}`,
     })
   }
 
-  async function confirmCountModal(nextValue) {
+  async function confirmCountModal(nextValue, noteText = '') {
     if (!countModal) return
+    const itemId = countModal.itemId
     const nextQuantities = {
       ...quantitiesRef.current,
-      [countModal.itemId]: nextValue ? String(nextValue) : '',
+      [itemId]: nextValue ? String(nextValue) : '',
     }
+    const existingNote = String(notesRef.current[itemId] || '').trim()
+    const typedNote = String(noteText || '').trim()
+    const nextNote =
+      countModal.mode === 'add'
+        ? typedNote
+          ? existingNote
+            ? `${existingNote}\n${typedNote}`
+            : typedNote
+          : existingNote
+        : typedNote
+    const nextNotes = { ...notesRef.current, [itemId]: nextNote }
     quantitiesRef.current = nextQuantities
+    notesRef.current = nextNotes
     setQuantities(nextQuantities)
+    setNotes(nextNotes)
     setCountModal(null)
-    window.clearTimeout(noteTimer.current)
     await save({ nextQuantities, quiet: false })
   }
 
   if (loading) return <LoadingState label="Loading daily log…" />
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="daily-log w-full space-y-4 pb-8">
       <PageHeader
         kicker={period?.office_name || 'E-Learning Ville'}
         title="Daily accomplishments"
-        description="Choose a semester and date, then Add or Update the count for each output. Changes save automatically and update the annual tally board."
-        actions={
-          <Segmented
-            value={semester}
-            onChange={(id) => void changeSemester(id)}
-            options={DAILY_SEMESTERS.map((row) => ({ id: row.id, label: row.label }))}
-          />
-        }
+        description="Add or update this day’s count for your assigned outputs. Notes are inside Add or Update. Changes save automatically."
       />
 
-      <section className="card p-5">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-          <div className="flex min-w-0 flex-wrap items-end gap-x-6 gap-y-3">
-            <div className="w-52 shrink-0">
-              <label
-                htmlFor="daily-work-date"
-                className="mb-1.5 block text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase"
-              >
-                Date
-              </label>
-              <input
-                id="daily-work-date"
-                type="date"
-                className="field h-11"
-                min={dateBounds.min}
-                max={dateBounds.max}
-                value={workDate}
-                onChange={(event) => void changeWorkDate(event.target.value)}
-              />
-            </div>
-            <div className="min-w-0 pb-1">
-              <p className="text-sm font-semibold text-slate-900">{dayLabel}</p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                This page shows <strong>{semLabel}</strong>. The tally board still totals January–December.
-              </p>
-            </div>
+      <section className="daily-toolbar card">
+        <div className="daily-toolbar-field">
+          <label id="daily-semester-label">Semester</label>
+          <div
+            className="daily-toolbar-control"
+            role="group"
+            aria-labelledby="daily-semester-label"
+          >
+            <Segmented
+              value={semester}
+              onChange={(id) => void changeSemester(id)}
+              options={DAILY_SEMESTERS.map((row) => ({ id: row.id, label: row.label }))}
+            />
           </div>
         </div>
-        {staff && (
-          <ol className="mt-4 flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-100 pt-3 text-sm text-slate-600">
-            <li>
-              <span className="font-bold text-teal-800">1.</span> Pick the semester and date
-            </li>
-            <li>
-              <span className="font-bold text-teal-800">2.</span> Add or update this day’s count
-            </li>
-            <li>
-              <span className="font-bold text-teal-800">3.</span> Counts and notes save by themselves
-            </li>
-          </ol>
-        )}
+        <div className="daily-toolbar-field">
+          <label htmlFor="daily-work-date">Date</label>
+          <div className="daily-toolbar-control">
+            <input
+              id="daily-work-date"
+              type="date"
+              className="field"
+              min={dateBounds.min}
+              max={dateBounds.max}
+              value={workDate}
+              onChange={(event) => void changeWorkDate(event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="daily-toolbar-field">
+          <label>Day</label>
+          <div className="daily-toolbar-day">
+            <strong>{dayLabel}</strong>
+            <span>
+              January–December totals match the tally board
+            </span>
+          </div>
+        </div>
       </section>
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -356,7 +386,7 @@ export default function DailyLog() {
         </Alert>
       )}
 
-      <div className="function-split-grid">
+      <div className={`function-split-grid ${grouped.length === 1 ? 'is-single' : ''}`}>
         {grouped.map((group) => (
           <section key={group.section} className="card overflow-hidden">
             <div className="border-b border-amber-200 bg-amber-100 px-4 py-2.5">
@@ -370,7 +400,6 @@ export default function DailyLog() {
                   <col className="daily-col-output" />
                   <col className="daily-col-count" />
                   <col className="daily-col-total" />
-                  <col className="daily-col-note" />
                 </colgroup>
                 <thead className="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
                   <tr>
@@ -379,18 +408,20 @@ export default function DailyLog() {
                     <th className="px-2 py-2.5 text-center font-semibold">
                       Total
                       <span className="mt-0.5 block text-[10px] font-medium tracking-normal text-slate-400 normal-case">
-                        {semLabel}
+                        Jan–Dec {workYear(workDate)}
                       </span>
                     </th>
-                    <th className="px-3 py-2.5 font-semibold">Note</th>
                   </tr>
                 </thead>
                 <tbody>
                   {group.items.map((item) => {
                     const itemKey = item.id || item.entry_id
-                    const total = semesterTotal(logs, item.id, workDate, semester)
+                    const dayLog = dayLogForItem(item)
                     const typed = toCount(quantities[item.id])
-                    const shownTotal = total - toCount(logByItem[item.id]?.quantity) + typed
+                    const shownTotal = Math.max(
+                      0,
+                      toCount(item.board_actual) - toCount(dayLog?.quantity) + typed,
+                    )
                     return (
                       <tr key={itemKey} className="border-t border-slate-100">
                         <td className="px-4 py-2.5 align-middle font-semibold text-slate-900">
@@ -418,21 +449,6 @@ export default function DailyLog() {
                             {formatCount(shownTotal)}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 align-middle">
-                          <input
-                            disabled={!staff || item.pending}
-                            value={item.id ? (notes[item.id] ?? '') : ''}
-                            onChange={(event) => {
-                              if (!item.id) return
-                              const value = event.target.value
-                              setNotes((current) => ({ ...current, [item.id]: value }))
-                              notesRef.current = { ...notesRef.current, [item.id]: value }
-                              scheduleNoteSave()
-                            }}
-                            className="field daily-note-field h-10"
-                            placeholder="Note"
-                          />
-                        </td>
                       </tr>
                     )
                   })}
@@ -443,12 +459,21 @@ export default function DailyLog() {
         ))}
       </div>
 
+      {staff && items.length === 0 && (
+        <EmptyState
+          title="No assigned targets"
+          body="Outputs with a target assigned to you, or with an existing count, appear here. Ask an admin to set your targets on the Tally board."
+        />
+      )}
+
       {countModal && (
         <CountEditModal
           mode={countModal.mode}
           title={countModal.title}
           detail={countModal.detail}
           current={countModal.current}
+          showNote
+          currentNote={countModal.note || ''}
           saving={saving}
           onClose={() => setCountModal(null)}
           onConfirm={confirmCountModal}
