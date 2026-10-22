@@ -1095,10 +1095,132 @@ input.field[type='number']::-webkit-inner-spin-button {
 
 .ar-toolbar-note {
   margin: 0.35rem 0 0;
-  max-width: 40rem;
+  max-width: 46rem;
   font-size: 0.875rem;
   line-height: 1.5;
   color: #64748b;
+}
+
+.ar-rules {
+  border: 1px solid #d8e4e1;
+  border-radius: 1rem;
+  background: #f8fffd;
+  padding: 0.9rem 1rem 1rem;
+  color: #134e4a;
+}
+
+.ar-rules h2,
+.ar-rules h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.ar-rules h3 {
+  margin-top: 0.85rem;
+}
+
+.ar-rules ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.ar-rules li + li {
+  margin-top: 0.2rem;
+}
+
+.ar-rules table {
+  width: 100%;
+  max-width: 42rem;
+  margin-top: 0.45rem;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ar-rules th,
+.ar-rules td {
+  border: 1px solid #c7ddd8;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.ar-rules th {
+  background: #ecfdf8;
+}
+
+.ar-tally-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.ar-col-link {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #0f766e;
+}
+
+.ar-off-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+}
+
+.ar-off-setup span {
+  margin-right: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.ar-off-setup button {
+  min-width: 2.6rem;
+  border: 1px solid #d8e4e1;
+  border-radius: 999px;
+  background: #fff;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.ar-off-setup button.is-off {
+  border-color: #0f766e;
+  background: #ccfbf1;
+  color: #115e59;
+}
+
+.ar-sign-edit {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.ar-sign-edit .field {
+  width: 14rem;
+  text-align: center;
+}
+
+.ar-sign-edit button,
+.ar-sign-edit-btn {
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ar-sign-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
 }
 
 .ar-workbook {

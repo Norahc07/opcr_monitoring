@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Pencil, Plus, Printer } from 'lucide-react'
 import { Button } from '../components/ui'
 import { CountActions } from '../components/CountEditModal'
 import { CellEditModal, ColumnEditModal } from '../components/AccomplishmentModals'
+import { useAuth } from '../context/useAuth'
 import {
-  ACCOMPLISHMENT_SIGNERS,
+  ACCOMPLISHMENT_NOTED,
   ACCOMPLISHMENT_YEAR,
+  WEEKDAYS,
   buildPeriods,
   cellText,
   defaultPeriodId,
@@ -19,32 +22,51 @@ import {
   setCellEntry,
   writeAccomplishmentStore,
 } from '../lib/accomplishment'
+import {
+  ACCOMPLISHMENT_COUNT_RULES,
+  ACCOMPLISHMENT_TALLY_LINKS,
+  syncAccomplishmentOutputs,
+  tallyOutputForColumn,
+} from '../lib/accomplishmentTally'
 
 const MAUBAN_SEAL = '/mauban_logo.jpg'
 const ELEARNING_LOGO = '/elearning_logo.png'
 
 export default function AccomplishmentReport() {
+  const { user, profile, isAdmin } = useAuth()
   const periods = useMemo(() => buildPeriods(ACCOMPLISHMENT_YEAR), [])
   const [periodId, setPeriodId] = useState(defaultPeriodId(ACCOMPLISHMENT_YEAR))
-  const [store, setStore] = useState(() => readAccomplishmentStore())
+  const [store, setStore] = useState(null)
   const [columnModal, setColumnModal] = useState(null)
   const [cellModal, setCellModal] = useState(null)
   const [draggingId, setDraggingId] = useState('')
   const [dropId, setDropId] = useState('')
+  const [tallyNote, setTallyNote] = useState('')
+
+  const staffName = String(profile?.full_name || '').trim().toLocaleUpperCase()
+  const staffTitle = String(profile?.position || '').trim()
 
   const periodIndex = Math.max(
     0,
     periods.findIndex((row) => row.id === periodId),
   )
   const period = periods[periodIndex] || periods[0]
-  const days = useMemo(() => rowsForPeriod(period), [period])
+  const offDays = store?.offDays
+  const days = useMemo(() => rowsForPeriod(period, offDays), [period, offDays])
   const shortCount = days.filter((row) => row.off || row.holiday).length
   const workCount = Math.max(days.length - shortCount, 1)
-  const { columns, entries } = store
+  const columns = store?.columns || []
+  const entries = store?.entries || {}
 
   useEffect(() => {
-    writeAccomplishmentStore(store)
-  }, [store])
+    if (!user?.id || isAdmin) return
+    setStore(readAccomplishmentStore(user.id, profile))
+  }, [user?.id, isAdmin, profile])
+
+  useEffect(() => {
+    if (!user?.id || !store || isAdmin) return
+    writeAccomplishmentStore(user.id, store)
+  }, [user?.id, store, isAdmin])
 
   function goPeriod(step) {
     const next = periods[periodIndex + step]
@@ -71,6 +93,29 @@ export default function AccomplishmentReport() {
     window.setTimeout(() => window.print(), 50)
   }
 
+  async function pushTally({ nextColumns, nextEntries, dates, outputs }) {
+    const linked = (outputs || []).filter(Boolean)
+    if (!user?.id || !linked.length || !dates?.length) return
+    setTallyNote('Updating the tally…')
+    try {
+      const saved = await syncAccomplishmentOutputs({
+        userId: user.id,
+        columns: nextColumns,
+        entries: nextEntries,
+        dates,
+        outputs: linked,
+      })
+      const counted = saved.filter((row) => row.quantity > 0)
+      setTallyNote(
+        counted.length
+          ? `Tally updated. ${counted.map((row) => `${row.output} on ${row.date} is now ${row.quantity}`).join('; ')}. That day’s count is included in the January–December total.`
+          : 'Saved. That date no longer adds to the tally.',
+      )
+    } catch (err) {
+      setTallyNote(err.message || 'The accomplishment was saved, but the tally was not updated.')
+    }
+  }
+
   function saveColumn(label) {
     if (columnModal?.mode === 'add') {
       setStore((current) => ({
@@ -78,37 +123,69 @@ export default function AccomplishmentReport() {
         columns: [...current.columns, { id: newColumnId(label), label }],
       }))
     } else if (columnModal?.columnId) {
+      const previous = columns.find((column) => column.id === columnModal.columnId)
+      const nextColumns = renameColumn(columns, columnModal.columnId, label)
       setStore((current) => ({
         ...current,
-        columns: renameColumn(current.columns, columnModal.columnId, label),
+        columns: nextColumns,
       }))
+      void pushTally({
+        nextColumns,
+        nextEntries: entries,
+        dates: Object.keys(entries),
+        outputs: [tallyOutputForColumn(previous?.label), tallyOutputForColumn(label)],
+      })
     }
     setColumnModal(null)
   }
 
   function deleteColumn() {
     if (!columnModal?.columnId || columns.length <= 1) return
-    setStore((current) => {
-      const next = removeColumn(current.columns, current.entries, columnModal.columnId)
-      return { columns: next.columns, entries: next.entries }
-    })
+    const previous = columns.find((column) => column.id === columnModal.columnId)
+    const next = removeColumn(columns, entries, columnModal.columnId)
+    setStore((current) => (current ? { ...current, columns: next.columns, entries: next.entries } : current))
     setColumnModal(null)
+    void pushTally({
+      nextColumns: next.columns,
+      nextEntries: next.entries,
+      dates: Object.keys(entries),
+      outputs: [tallyOutputForColumn(previous?.label)],
+    })
   }
 
   function saveCell(text) {
     if (!cellModal) return
     const current = cellText(cellModal.dateKey, cellModal.columnId, entries)
-    const next = nextCellText(current, text, cellModal.mode)
+    const nextText = nextCellText(current, text, cellModal.mode)
+    const nextEntries = setCellEntry(entries, cellModal.dateKey, cellModal.columnId, nextText)
+    const column = columns.find((row) => row.id === cellModal.columnId)
     setStore((prev) => ({
       ...prev,
-      entries: setCellEntry(prev.entries, cellModal.dateKey, cellModal.columnId, next),
+      entries: nextEntries,
     }))
     setCellModal(null)
+    void pushTally({
+      nextColumns: columns,
+      nextEntries,
+      dates: [cellModal.dateKey],
+      outputs: [tallyOutputForColumn(column?.label)],
+    })
   }
 
   function endColumnDrag() {
     setDraggingId('')
     setDropId('')
+  }
+
+  function toggleOffDay(dayId) {
+    setStore((current) => {
+      if (!current) return current
+      const has = current.offDays.includes(dayId)
+      const offDays = has
+        ? current.offDays.filter((day) => day !== dayId)
+        : [...current.offDays, dayId].sort((a, b) => a - b)
+      return { ...current, offDays }
+    })
   }
 
   function dropColumn(targetId) {
@@ -123,6 +200,10 @@ export default function AccomplishmentReport() {
     endColumnDrag()
   }
 
+  if (isAdmin) return <Navigate to="/" replace />
+
+  if (!store) return null
+
   return (
     <div className="ar-page">
       <div className="ar-toolbar print-hide">
@@ -130,9 +211,22 @@ export default function AccomplishmentReport() {
           <p className="ar-toolbar-kicker">Office form</p>
           <h1 className="ar-toolbar-title">Accomplishment report</h1>
           <p className="ar-toolbar-note">
-            Date stays fixed. Drag a column header to move it. Add or edit columns and row entries
-            with the buttons — nothing is typed in the grid.
+            Your sheet is saved on this account. Linked columns also update your tally. Read the rules below before you enter a count.
           </p>
+          <div className="ar-off-setup" aria-label="Day off weekdays">
+            <span>Day off</span>
+            {WEEKDAYS.map((day) => (
+              <button
+                key={day.id}
+                type="button"
+                className={store.offDays.includes(day.id) ? 'is-off' : ''}
+                aria-pressed={store.offDays.includes(day.id)}
+                onClick={() => toggleOffDay(day.id)}
+              >
+                {day.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => setColumnModal({ mode: 'add' })}>
@@ -167,6 +261,33 @@ export default function AccomplishmentReport() {
           <ChevronRight size={20} />
         </button>
       </nav>
+
+      <section className="ar-rules print-hide" aria-label="How counts reach the tally">
+        <h2>How to enter a count</h2>
+        <ul>
+          {ACCOMPLISHMENT_COUNT_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ul>
+        <h3>Columns that update the tally</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Accomplishment column</th>
+              <th>Tally output</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ACCOMPLISHMENT_TALLY_LINKS.map((link) => (
+              <tr key={link.column}>
+                <td>{link.column}</td>
+                <td>{link.output}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {tallyNote ? <p className="ar-tally-note">{tallyNote}</p> : null}
+      </section>
 
       <div className="ar-workbook ar-print-page">
         <section className="ar-sheet" aria-label="Accomplishment report sheet">
@@ -228,6 +349,11 @@ export default function AccomplishmentReport() {
                     >
                       <div className="ar-col-head">
                         <span className="ar-col-title">{column.label}</span>
+                        {tallyOutputForColumn(column.label) ? (
+                          <span className="ar-col-link print-hide">
+                            Counts toward {tallyOutputForColumn(column.label)}
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           className="ar-col-edit print-hide"
@@ -309,12 +435,12 @@ export default function AccomplishmentReport() {
 
           <footer className="ar-signs">
             <div className="ar-sign">
-              <p className="ar-sign-name">{ACCOMPLISHMENT_SIGNERS.prepared.name}</p>
-              <p className="ar-sign-title">{ACCOMPLISHMENT_SIGNERS.prepared.title}</p>
+              <p className="ar-sign-name">{staffName}</p>
+              {staffTitle ? <p className="ar-sign-title">{staffTitle}</p> : null}
             </div>
             <div className="ar-sign">
-              <p className="ar-sign-name">{ACCOMPLISHMENT_SIGNERS.noted.name}</p>
-              <p className="ar-sign-title">{ACCOMPLISHMENT_SIGNERS.noted.title}</p>
+              <p className="ar-sign-name">{ACCOMPLISHMENT_NOTED.name}</p>
+              <p className="ar-sign-title">{ACCOMPLISHMENT_NOTED.title}</p>
             </div>
           </footer>
         </section>

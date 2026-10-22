@@ -2,21 +2,107 @@ import { holidayNameOn } from './phHolidays'
 
 export const ACCOMPLISHMENT_YEAR = 2026
 
-export const ACCOMPLISHMENT_COLUMNS = [
+const KNOWLEDGE_WORKER_COLUMNS = [
   { id: 'cashier', label: 'Cashier' },
   { id: 'printing', label: 'Printing' },
   { id: 'layout', label: 'Layout' },
-  { id: 'clients', label: 'Clients Assisting' },
+  { id: 'clients', label: 'Client Assisting' },
   { id: 'training', label: 'Training' },
   { id: 'id', label: 'ID' },
   { id: 'online', label: 'Online Appointment' },
   { id: 'others', label: 'Others' },
 ]
 
-export const ACCOMPLISHMENT_SIGNERS = {
-  prepared: { name: 'LUIGI D. AMARILLO', title: 'KNOWLEDGE WORKER' },
-  noted: { name: 'CONCHITA MARTA B. MIRABUENO', title: 'CoE Manager' },
+const MAINTENANCE_COLUMNS = [
+  { id: 'cashier', label: 'Cashier' },
+  { id: 'printing', label: 'Printing' },
+  { id: 'layout', label: 'Layout' },
+  { id: 'tech4ed', label: 'Tech4ED' },
+  { id: 'clients', label: 'Client Assisting' },
+  { id: 'training', label: 'Training' },
+  { id: 'id', label: 'ID' },
+  { id: 'pc_maintenance', label: 'PC Maintenance' },
+  { id: 'others', label: 'Others' },
+]
+
+const AIDE_JM_COLUMNS = [
+  { id: 'cashier', label: 'Cashier' },
+  { id: 'printing', label: 'Printing' },
+  { id: 'clients', label: 'Client Assisting' },
+  { id: 'layout_design', label: 'Layout Design' },
+  { id: 'id_photo_signature', label: 'ID photo & signature Layout' },
+  { id: 'training_forms', label: 'Training / Google Forms' },
+  { id: 'pc_repair', label: 'PC Maintenance / Repair' },
+  { id: 'prepared_docs', label: "Prepared - Project Design & PR's/ Vouchers, & etc." },
+  { id: 'processed', label: 'Processed Documents' },
+  { id: 'delivery', label: 'Delivery Inspection' },
+  { id: 'others', label: 'Others' },
+]
+
+const LEGACY_KNOWLEDGE_COLUMNS = KNOWLEDGE_WORKER_COLUMNS.map((column) =>
+  column.id === 'clients' ? { ...column, label: 'Clients Assisting' } : { ...column },
+)
+
+export const ACCOMPLISHMENT_COLUMNS = KNOWLEDGE_WORKER_COLUMNS
+
+function cloneColumns(columns) {
+  return columns.map((column) => ({ ...column }))
 }
+
+function sameColumns(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((column, index) => column.id === right[index].id && column.label === right[index].label)
+  )
+}
+
+function isJmAccount(profile) {
+  const shortName = String(profile?.short_name || '').trim().toLowerCase()
+  const fullName = String(profile?.full_name || '').trim().toLowerCase()
+  const tokens = `${fullName} ${shortName}`.split(/[^a-z0-9]+/).filter(Boolean)
+  return shortName.replace(/[^a-z0-9]/g, '') === 'jm' || tokens.includes('jm') || fullName === 'jm'
+}
+
+export function accomplishmentColumnsFor(profile) {
+  if (isJmAccount(profile)) return cloneColumns(AIDE_JM_COLUMNS)
+  const position = String(profile?.position || '').toLowerCase()
+  const name = `${profile?.full_name || ''} ${profile?.short_name || ''}`.toLowerCase()
+  const maintenance =
+    position.includes('computer maintenance') ||
+    name.includes('jonathan') ||
+    name.includes('jayvee') ||
+    name.includes('jay vee')
+  return cloneColumns(maintenance ? MAINTENANCE_COLUMNS : KNOWLEDGE_WORKER_COLUMNS)
+}
+
+function columnsForAccount(columns, profile) {
+  const preset = accomplishmentColumnsFor(profile)
+  if (!columns.length) return preset
+  const untouched = [
+    KNOWLEDGE_WORKER_COLUMNS,
+    LEGACY_KNOWLEDGE_COLUMNS,
+    MAINTENANCE_COLUMNS,
+    AIDE_JM_COLUMNS,
+  ].some((row) => sameColumns(columns, row))
+  return untouched ? preset : columns
+}
+
+export const ACCOMPLISHMENT_NOTED = {
+  name: 'CONCHITA MARTA B. MIRABUENO',
+  title: 'CoE Manager',
+}
+
+export const WEEKDAYS = [
+  { id: 0, label: 'Sun' },
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+]
+
+export const DEFAULT_OFF_DAYS = [0, 6]
 
 const MONTHS = [
   'January',
@@ -78,7 +164,10 @@ export function buildPeriods(year = ACCOMPLISHMENT_YEAR) {
 }
 
 export function defaultPeriodId(year = ACCOMPLISHMENT_YEAR) {
-  return periodId(year, 9, 'a')
+  const now = new Date()
+  const month = now.getFullYear() === year ? now.getMonth() + 1 : 1
+  const day = now.getFullYear() === year ? now.getDate() : 1
+  return periodId(year, month, day <= 15 ? 'a' : 'b')
 }
 
 export function formatSheetDate(year, month, day) {
@@ -95,11 +184,20 @@ export function isWeekend(year, month, day) {
   return weekday === 0 || weekday === 6
 }
 
-export function rowsForPeriod(period) {
+export function normalizeOffDays(days) {
+  const source = Array.isArray(days) ? days : DEFAULT_OFF_DAYS
+  return [...new Set(source.map((day) => Number(day)))]
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    .sort((a, b) => a - b)
+}
+
+export function rowsForPeriod(period, offDays = DEFAULT_OFF_DAYS) {
   if (!period) return []
+  const off = new Set(normalizeOffDays(offDays))
   const rows = []
   for (let day = period.startDay; day <= period.endDay; day += 1) {
     const holiday = holidayNameOn(period.year, period.month, day)
+    const weekday = new Date(period.year, period.month - 1, day).getDay()
     rows.push({
       key: isoDate(period.year, period.month, day),
       year: period.year,
@@ -107,66 +205,34 @@ export function rowsForPeriod(period) {
       day,
       label: formatSheetDate(period.year, period.month, day),
       holiday,
-      off: !holiday && isWeekend(period.year, period.month, day),
+      off: !holiday && off.has(weekday),
     })
   }
   return rows
 }
 
-/** Sample entries from the office Excel sheet for September 1–15, 2026. Local preview only. */
-export const SAMPLE_ENTRIES = {
-  '2026-09-01': {
-    printing: '1 CLIENT',
-    others: 'Developing the OPCR\nMonitoring System',
-  },
-  '2026-09-02': {
-    clients: '1 PNP',
-    others: 'Taking Picture\n(1 utility)',
-  },
-  '2026-09-03': {
-    others: 'Developing the OPCR\nMonitoring System',
-  },
-  '2026-09-04': {
-    cashier: 'CASHIER',
-    printing: '1 CLIENT',
-  },
-  '2026-09-07': {
-    printing: '1 CLIENT\n(14 pages)',
-    clients: '1 PNP\n1 PDOS',
-  },
-  '2026-09-08': {
-    cashier: 'CASHIER',
-    printing: '1 CLIENT\n(12 pages)',
-    layout: '2 PK MIDD\n17 LGU Sign',
-    clients: '1 PDOS\n1 NBEI',
-  },
-  '2026-09-09': {
-    cashier: 'CASHIER',
-    printing: '1 CLIENT\n(15 pages)',
-    clients: '1 PNP',
-  },
-  '2026-09-10': {
-    training: 'CANVA FACILITATOR',
-  },
-}
-
-export function cellText(dateKey, columnId, entries = SAMPLE_ENTRIES) {
+export function cellText(dateKey, columnId, entries = {}) {
   return String(entries?.[dateKey]?.[columnId] || '')
 }
 
-const STORE_KEY = 'opcr-accomplishment-v1'
+function storeKey(userId) {
+  return `opcr-accomplishment-v3:${userId}`
+}
 
-export function defaultAccomplishmentStore() {
+export function defaultAccomplishmentStore(profile) {
   return {
-    columns: ACCOMPLISHMENT_COLUMNS.map((column) => ({ ...column })),
-    entries: { ...SAMPLE_ENTRIES },
+    columns: accomplishmentColumnsFor(profile),
+    entries: {},
+    staffName: '',
+    offDays: [...DEFAULT_OFF_DAYS],
   }
 }
 
-export function readAccomplishmentStore() {
+export function readAccomplishmentStore(userId, profile) {
+  if (!userId) return defaultAccomplishmentStore(profile)
   try {
-    const raw = localStorage.getItem(STORE_KEY)
-    if (!raw) return defaultAccomplishmentStore()
+    const raw = localStorage.getItem(storeKey(userId))
+    if (!raw) return defaultAccomplishmentStore(profile)
     const parsed = JSON.parse(raw)
     const columns = Array.isArray(parsed?.columns)
       ? parsed.columns
@@ -177,21 +243,25 @@ export function readAccomplishmentStore() {
           .filter((column) => column.id && column.label)
       : []
     return {
-      columns: columns.length ? columns : defaultAccomplishmentStore().columns,
+      columns: columnsForAccount(columns, profile),
       entries: parsed?.entries && typeof parsed.entries === 'object' ? parsed.entries : {},
+      staffName: String(parsed?.staffName || '').trim(),
+      offDays: normalizeOffDays(parsed?.offDays),
     }
   } catch {
-    return defaultAccomplishmentStore()
+    return defaultAccomplishmentStore(profile)
   }
 }
 
-export function writeAccomplishmentStore(snapshot) {
+export function writeAccomplishmentStore(userId, snapshot) {
   try {
     localStorage.setItem(
-      STORE_KEY,
+      storeKey(userId),
       JSON.stringify({
         columns: snapshot.columns,
         entries: snapshot.entries,
+        staffName: snapshot.staffName || '',
+        offDays: normalizeOffDays(snapshot.offDays),
       }),
     )
   } catch {

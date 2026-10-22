@@ -74,10 +74,12 @@ export default function Layout() {
             <CalendarDays size={18} />
             Daily log
           </NavLink>
-          <NavLink to="/accomplishment" className={linkClass}>
-            <FileSpreadsheet size={18} />
-            Accomplishment
-          </NavLink>
+          {!isAdmin && (
+            <NavLink to="/accomplishment" className={linkClass}>
+              <FileSpreadsheet size={18} />
+              Accomplishment
+            </NavLink>
+          )}
           <NavLink to="/opcr" className={linkClass}>
             <ClipboardList size={18} />
             My OPCR
