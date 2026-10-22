@@ -509,6 +509,120 @@ input.field[type='number']::-webkit-inner-spin-button {
   width: 14%;
 }
 
+.opcr-col-actual-ipcr {
+  width: 34%;
+}
+
+.ipcr-subcats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  width: min(100%, 36rem);
+  margin: 0.85rem auto 0;
+}
+
+.ipcr-subcats p {
+  margin: 0;
+  border: 1px solid #000;
+  background: #fff8d6;
+  padding: 0.4rem 0.6rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #000;
+}
+
+.ipcr-actual-period + .ipcr-actual-period {
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #cbd5e1;
+}
+
+.ipcr-actual-period h4,
+.ipcr-actual-period ul,
+.ipcr-actual-empty,
+.ipcr-actual-total,
+.ipcr-actual-year {
+  margin: 0;
+}
+
+.ipcr-actual-period h4 {
+  margin-bottom: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ipcr-actual-period ul {
+  padding: 0;
+  list-style: none;
+}
+
+.ipcr-actual-period li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.ipcr-actual-qty,
+.ipcr-actual-total,
+.ipcr-actual-year {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ipcr-actual-empty,
+.ipcr-actual-total {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+}
+
+.ipcr-actual-year {
+  margin-top: 0.7rem;
+  font-size: 0.78rem;
+}
+
+.ipcr-actual-add,
+.ipcr-actual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ipcr-actual-add {
+  margin-top: 0.35rem;
+}
+
+.ipcr-actual-add input,
+.ipcr-actual-actions input {
+  width: 6.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.35rem;
+  background: #fff;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.75rem;
+}
+
+.ipcr-actual-add button,
+.ipcr-actual-actions button {
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ipcr-actual-actions button:last-child {
+  color: #be123c;
+}
+
 .opcr-accountable,
 .opcr-accountable-list,
 .opcr-accountable-list li {
@@ -592,6 +706,28 @@ input.field[type='number']::-webkit-inner-spin-button {
 
 .opcr-print-page {
   width: 100%;
+}
+
+.ipcr-print-frame {
+  width: 100%;
+  border-collapse: collapse;
+  border: 0;
+}
+
+.ipcr-print-frame > thead,
+.ipcr-print-frame > tfoot {
+  display: none;
+}
+
+.ipcr-print-frame > tbody,
+.ipcr-print-frame > tbody > tr,
+.ipcr-print-frame > tbody > tr > td {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .opcr-drag-handle {
@@ -1102,64 +1238,106 @@ input.field[type='number']::-webkit-inner-spin-button {
 }
 
 .ar-rules {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: stretch;
   border: 1px solid #d8e4e1;
   border-radius: 1rem;
-  background: #f8fffd;
-  padding: 0.9rem 1rem 1rem;
-  color: #134e4a;
+  background: #fff;
+  padding: 0.85rem;
 }
 
-.ar-rules h2,
-.ar-rules h3 {
+.ar-rules-intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 0.8rem;
+  background: #f0fdfa;
+  padding: 0.75rem 0.8rem;
+}
+
+.ar-rules h2 {
   margin: 0;
   font-size: 0.95rem;
+  color: #115e59;
 }
 
-.ar-rules h3 {
-  margin-top: 0.85rem;
+.ar-rules-intro p {
+  margin: 0.2rem 0 0.45rem;
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
-.ar-rules ul {
-  margin: 0.45rem 0 0;
-  padding-left: 1.15rem;
+.ar-rules-sample {
+  display: grid;
+  gap: 0.3rem;
 }
 
-.ar-rules li + li {
-  margin-top: 0.2rem;
+.ar-rules-sample span {
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
 }
 
-.ar-rules table {
-  width: 100%;
-  max-width: 42rem;
-  margin-top: 0.45rem;
-  border-collapse: collapse;
-  font-size: 0.85rem;
+.ar-rules ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ar-rules th,
-.ar-rules td {
-  border: 1px solid #c7ddd8;
-  padding: 0.35rem 0.5rem;
-  text-align: left;
+.ar-rules li {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  padding: 0.65rem 0.7rem 0.7rem;
 }
 
-.ar-rules th {
-  background: #ecfdf8;
+.ar-rules li span {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #ccfbf1;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.ar-rules li strong {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.ar-rules li p {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #64748b;
 }
 
 .ar-tally-note {
-  margin: 0.75rem 0 0;
+  grid-column: 1 / -1;
+  margin: 0;
   font-size: 0.85rem;
   font-weight: 700;
+  color: #115e59;
 }
 
-.ar-col-link {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.65rem;
-  font-weight: 600;
-  line-height: 1.2;
-  color: #0f766e;
+@media (max-width: 1100px) {
+  .ar-rules,
+  .ar-rules ol {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .ar-off-setup {
@@ -1776,6 +1954,206 @@ input.field[type='number']::-webkit-inner-spin-button {
     box-shadow: none;
     padding: 0.1rem;
     background: transparent;
+  }
+
+  /* IPCR prints as the on-screen form. Page margin stays 0 so Chrome cannot print the URL or page number. */
+  body.printing-ipcr {
+    padding: 0 !important;
+  }
+
+  body.printing-ipcr .ipcr-print-frame {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    border: 0;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > thead {
+    display: table-header-group;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > tfoot {
+    display: table-footer-group;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > tbody {
+    display: table-row-group;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > thead > tr,
+  body.printing-ipcr .ipcr-print-frame > tfoot > tr,
+  body.printing-ipcr .ipcr-print-frame > tbody > tr {
+    display: table-row;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > thead > tr > td,
+  body.printing-ipcr .ipcr-print-frame > tfoot > tr > td,
+  body.printing-ipcr .ipcr-print-frame > tbody > tr > td {
+    display: table-cell;
+    border: 0 !important;
+    background: #fff;
+    padding: 0;
+  }
+
+  body.printing-ipcr .ipcr-print-frame > tbody > tr > td {
+    padding: 0 0.45in !important;
+  }
+
+  body.printing-ipcr .ipcr-print-pad-top {
+    height: 0.42in;
+  }
+
+  body.printing-ipcr .ipcr-print-pad-bottom {
+    height: 0.36in;
+  }
+
+  body.printing-ipcr .opcr-print-page {
+    display: block;
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  body.printing-ipcr .opcr-print-fill {
+    display: block;
+    flex: none;
+    height: auto;
+    min-height: 0;
+  }
+
+  body.printing-ipcr .opcr-print-fill > .opcr-functions,
+  body.printing-ipcr .opcr-print-fill .opcr-functions tbody,
+  body.printing-ipcr .opcr-functions tbody tr.opcr-section,
+  body.printing-ipcr .opcr-functions tbody tr:not(.opcr-section):not(.opcr-average):not(.opcr-comments-row),
+  body.printing-ipcr .opcr-comments-row {
+    height: auto !important;
+    flex: none;
+  }
+
+  body.printing-ipcr .opcr-print-page + .opcr-print-page thead.opcr-repeat-head {
+    display: none;
+  }
+
+  body.printing-ipcr .opcr-print-header,
+  body.printing-ipcr .opcr-approved,
+  body.printing-ipcr .opcr-closing {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.printing-ipcr .opcr-print-header {
+    margin-bottom: 0.2rem;
+    padding-top: 0;
+  }
+
+  body.printing-ipcr .opcr-print-header > * + * {
+    margin-top: 0.35rem !important;
+  }
+
+  body.printing-ipcr .opcr-sheet header h1 {
+    padding-left: 0;
+    padding-right: 0;
+    font-size: 1.35rem;
+    line-height: 1.25;
+    letter-spacing: 0.04em;
+  }
+
+  body.printing-ipcr .opcr-print-header p {
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  body.printing-ipcr .opcr-signer {
+    width: min(100%, 22rem);
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  body.printing-ipcr .opcr-signer-name,
+  body.printing-ipcr .opcr-approved .opcr-approved-name,
+  body.printing-ipcr .opcr-closing .opcr-approved-name {
+    font-size: 0.95rem;
+  }
+
+  body.printing-ipcr .opcr-signer-position,
+  body.printing-ipcr .opcr-approved .opcr-approved-position,
+  body.printing-ipcr .opcr-closing .opcr-approved-position {
+    font-size: 0.875rem;
+  }
+
+  body.printing-ipcr .opcr-approved.mt-6 {
+    margin-top: 0.35rem !important;
+  }
+
+  body.printing-ipcr .opcr-approved .opcr-approved-label {
+    padding: 0.22rem 0.45rem;
+    font-size: 0.8rem;
+  }
+
+  body.printing-ipcr .opcr-approved .opcr-approved-sign,
+  body.printing-ipcr .opcr-approved .opcr-approved-date {
+    padding: 0.15rem 0.4rem 0.2rem;
+    vertical-align: bottom;
+  }
+
+  body.printing-ipcr .opcr-approved-signatory {
+    --opcr-approved-signature-space: 0.32in;
+    padding-top: var(--opcr-approved-signature-space);
+    margin-bottom: 0.12rem;
+  }
+
+  body.printing-ipcr .opcr-approved-date-value {
+    font-size: 0.9rem;
+  }
+
+  body.printing-ipcr .opcr-sheet thead th {
+    padding: 0.5rem 0.4rem;
+    font-size: 0.78rem;
+  }
+
+  body.printing-ipcr .opcr-sheet thead th .opcr-head-note {
+    font-size: 0.66rem;
+  }
+
+  body.printing-ipcr .opcr-sheet .opcr-subhead th {
+    padding: 0.28rem 0.25rem;
+    font-size: 0.72rem;
+  }
+
+  body.printing-ipcr .opcr-sheet .opcr-section td {
+    height: auto !important;
+    padding: 0.4rem 0.55rem !important;
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+
+  body.printing-ipcr .opcr-sheet tbody td {
+    padding: 0.5rem 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+
+  body.printing-ipcr .opcr-comments-box,
+  body.printing-ipcr .opcr-sheet p.min-h-16 {
+    min-height: 5.5rem !important;
+    height: auto;
+  }
+
+  body.printing-ipcr .opcr-closing .opcr-closing-sign,
+  body.printing-ipcr .opcr-closing .opcr-closing-date {
+    height: 8.75rem;
+  }
+
+  body.printing-ipcr .opcr-closing .opcr-closing-cert {
+    font-size: 0.72rem;
+  }
+
+  body.printing-ipcr .opcr-closing .opcr-closing-legend {
+    font-size: 0.78rem;
   }
 
   .toast-popup,

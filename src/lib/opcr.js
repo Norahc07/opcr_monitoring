@@ -1466,6 +1466,54 @@ export function itemsAssignedToPerson(person, items, tallies, personItemByOutput
   return itemsVisibleToPerson(person, items, tallies, personItemByOutput, logs)
 }
 
+export function targetOutputKeysForPerson(person, items, tallies, personItemByOutput = {}) {
+  if (!person?.id) return new Set()
+  const rows = buildBoardRows([person], items, tallies, personItemByOutput)
+  const keys = new Set()
+  for (const item of items || []) {
+    const outKey = outputKey(item.output)
+    const personItemId = personItemByOutput[person.id]?.[outKey] || item.id
+    const row =
+      rows[tallyKey(person.id, item.id, TALLY_PERIOD_ID)] ||
+      rows[tallyKey(person.id, personItemId, TALLY_PERIOD_ID)]
+    if (toCount(row?.target) > 0) keys.add(outKey)
+  }
+  return keys
+}
+
+export function ipcrEntriesForStaff(entries, items, targetKeys, skipKeys = new Set()) {
+  const keys = targetKeys instanceof Set ? targetKeys : new Set(targetKeys || [])
+  const skipped = skipKeys instanceof Set ? skipKeys : new Set(skipKeys || [])
+  const primaries = (entries || []).filter(
+    (entry) => isPrimaryOpcrEntry(entry) && keys.has(outputKey(entry.output)),
+  )
+  const primaryIds = new Set(primaries.map((entry) => entry.id))
+  const visible = (entries || []).filter(
+    (entry) =>
+      primaryIds.has(entry.id) || (entry.parent_entry_id && primaryIds.has(entry.parent_entry_id)),
+  )
+  const present = new Set(primaries.map((entry) => outputKey(entry.output)))
+  const additions = []
+  for (const item of items || []) {
+    const key = outputKey(item.output)
+    if (!keys.has(key) || present.has(key) || skipped.has(key)) continue
+    present.add(key)
+    additions.push({
+      id: `tmp-ipcr-${item.id}`,
+      item_id: item.id,
+      output: item.output || '',
+      success_indicator: item.success_indicator || '',
+      accountable: '',
+      section: sectionForOutput(item.output),
+      sort_order: item.sort_order || 0,
+      actual_accomplishment: '',
+      remarks: '',
+      parent_entry_id: null,
+    })
+  }
+  return [...visible, ...additions]
+}
+
 export function assignedItemIdSet(person, items, personItemByOutput = {}) {
   const ids = new Set()
   const mapped = person?.id ? personItemByOutput[person.id] || {} : {}

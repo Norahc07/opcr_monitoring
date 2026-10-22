@@ -16,10 +16,12 @@ import {
   formatDateDisplay,
   getActivePeriod,
   groupOpcrSectionEntries,
+  ipcrEntriesForStaff,
   isPrimaryOpcrEntry,
   isTempEntryId,
   joinExtraAccountable,
   loadTallyContext,
+  outputKey,
   readApprovedCache,
   readBoardCache,
   readClosingCache,
@@ -27,6 +29,7 @@ import {
   readMyOpcrCache,
   saveOpcrRows,
   saveFormSigner,
+  targetOutputKeysForPerson,
   toDateValue,
   writeApprovedCache,
   writeClosingCache,
@@ -34,6 +37,18 @@ import {
   writeMyOpcrCache,
 } from '../lib/opcr'
 import { normalizeSection } from '../lib/coreFunctions'
+import { ACCOMPLISHMENT_YEAR, readAccomplishmentStore, writeAccomplishmentStore } from '../lib/accomplishment'
+import {
+  IPCR_COUNT_PERIODS,
+  formatCountDate,
+  formatCountValue,
+  ipcrPeriodForDate,
+  ipcrPeriodIdFromPath,
+  outputCountLines,
+  periodDateBounds,
+  syncAccomplishmentOutputs,
+  writeOutputCount,
+} from '../lib/accomplishmentTally'
 
 const DEFAULT_OPCR_HEADER_TITLE = 'Office Performance Commitment and Review (OPCR)'
 const DEFAULT_OPCR_HEADER_OFFICE =
@@ -61,6 +76,23 @@ const HEAD_OF_OFFICE = 'HON. BAUTISTA ERWIN DWIGHT C. PASTRANA'
 const HEAD_OF_OFFICE_TITLE = 'Municipal Mayor'
 const ASSESSOR_NAME = 'CONCHITA MARTA B. MIRABUENO'
 const ASSESSOR_TITLE = 'MGDH1-Center Manager'
+const IPCR_HEADER_TITLE = 'INDIVIDUAL PERFORMANCE COMMITMENT AND REVIEW'
+function ipcrHiddenKey(userId) {
+  return `opcr-ipcr-hidden:${userId}`
+}
+
+function readIpcrHidden(userId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ipcrHiddenKey(userId)) || '[]')
+    return new Set(Array.isArray(parsed) ? parsed : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function writeIpcrHidden(userId, keys) {
+  localStorage.setItem(ipcrHiddenKey(userId), JSON.stringify([...keys]))
+}
 
 const OPCR_RATING_SCALE = [
   { level: 'Outstanding', range: '130% and above', rating: '5' },
@@ -69,6 +101,33 @@ const OPCR_RATING_SCALE = [
   { level: 'Unsatisfactory', range: '51-89%', rating: '2' },
   { level: 'Poor', range: '50% and below', rating: '1' },
 ]
+
+function IpcrPrintFrame({ enabled, children }) {
+  if (!enabled) return children
+  return (
+    <table className="ipcr-print-frame">
+      <thead>
+        <tr>
+          <td>
+            <div className="ipcr-print-pad ipcr-print-pad-top" />
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{children}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>
+            <div className="ipcr-print-pad ipcr-print-pad-bottom" />
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  )
+}
 
 function OpcrRatingScale() {
   return (
@@ -299,14 +358,15 @@ function AccountablePeople({ aligned = [], extrasText = '', editing, locked, onC
 }
 
 const OPCR_TABLE_COLS = 9
+const IPCR_TABLE_COLS = 8
 
-function OpcrColGroup() {
+function OpcrColGroup({ ipcr = false }) {
   return (
     <colgroup>
       <col className="opcr-col-output" />
       <col className="opcr-col-success" />
-      <col className="opcr-col-accountable" />
-      <col className="opcr-col-actual" />
+      {ipcr ? null : <col className="opcr-col-accountable" />}
+      <col className={ipcr ? 'opcr-col-actual-ipcr' : 'opcr-col-actual'} />
       <col className="opcr-col-rating" />
       <col className="opcr-col-rating" />
       <col className="opcr-col-rating" />
@@ -316,7 +376,7 @@ function OpcrColGroup() {
   )
 }
 
-function OpcrColumnHeads({ className = '' }) {
+function OpcrColumnHeads({ className = '', ipcr = false }) {
   return (
     <thead className={className}>
       <tr>
@@ -325,10 +385,12 @@ function OpcrColumnHeads({ className = '' }) {
           Success Indicator{' '}
           <span className="opcr-head-note">(Target + Measures)</span>
         </th>
-        <th rowSpan={2}>
-          Divisions/Individuals{' '}
-          <span className="opcr-head-note">Accountable</span>
-        </th>
+        {ipcr ? null : (
+          <th rowSpan={2}>
+            Divisions/Individuals{' '}
+            <span className="opcr-head-note">Accountable</span>
+          </th>
+        )}
         <th rowSpan={2}>Actual Accomplishments</th>
         <th colSpan={4}>Rating</th>
         <th rowSpan={2}>Remarks</th>
@@ -343,13 +405,133 @@ function OpcrColumnHeads({ className = '' }) {
   )
 }
 
-function OpcrFunctionsTable({ headClassName = '', children }) {
+function OpcrFunctionsTable({ headClassName = '', ipcr = false, children }) {
   return (
     <table className="opcr-functions">
-      <OpcrColGroup />
-      <OpcrColumnHeads className={headClassName} />
+      <OpcrColGroup ipcr={ipcr} />
+      <OpcrColumnHeads className={headClassName} ipcr={ipcr} />
       <tbody>{children}</tbody>
     </table>
+  )
+}
+
+function IpcrActuals({ output, entries, columns, periodId, editing, locked, busy, onSave }) {
+  const summary = outputCountLines(entries, columns, output)
+  const period = summary.periods.find((item) => item.id === periodId) || summary.periods[0]
+  const canEdit = editing && !locked && summary.linked
+
+  if (!summary.linked) {
+    return <p className="ipcr-actual-empty">No accomplishment column is linked to this output.</p>
+  }
+
+  return (
+    <div className="ipcr-actual">
+      <IpcrActualPeriod
+        period={period}
+        output={output}
+        canEdit={canEdit}
+        busy={busy}
+        onSave={onSave}
+      />
+    </div>
+  )
+}
+
+function IpcrActualPeriod({ period, output, canEdit, busy, onSave }) {
+  const bounds = periodDateBounds(period, ACCOMPLISHMENT_YEAR)
+  const [date, setDate] = useState(bounds.start)
+  const [quantity, setQuantity] = useState('')
+
+  function saveLine(workDate, nextQuantity) {
+    const periodMatch = ipcrPeriodForDate(workDate, ACCOMPLISHMENT_YEAR)
+    if (!periodMatch || periodMatch.id !== period.id) return
+    onSave(output, workDate, nextQuantity)
+  }
+
+  return (
+    <section className="ipcr-actual-period">
+      {period.lines.length ? (
+        <ul>
+          {period.lines.map((line) => (
+            <IpcrActualLine
+              key={line.date}
+              line={line}
+              canEdit={canEdit}
+              busy={busy === `${output}|${line.date}`}
+              onSave={saveLine}
+            />
+          ))}
+        </ul>
+      ) : null}
+      {canEdit ? (
+        <form
+          className="ipcr-actual-add print-hide"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = Number(quantity)
+            if (!date || !Number.isFinite(next) || next <= 0) return
+            saveLine(date, next)
+            setQuantity('')
+          }}
+        >
+          <input type="date" min={bounds.start} max={bounds.end} value={date} onChange={(event) => setDate(event.target.value)} aria-label={`${period.label} date`} />
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            placeholder="Count"
+            aria-label={`${period.label} count`}
+          />
+          <button type="submit">Add</button>
+        </form>
+      ) : null}
+      {period.lines.length ? (
+        <p className="ipcr-actual-total">{formatCountValue(period.total)}</p>
+      ) : null}
+    </section>
+  )
+}
+
+function IpcrActualLine({ line, canEdit, busy, onSave }) {
+  const [quantity, setQuantity] = useState(formatCountValue(line.quantity))
+
+  useEffect(() => {
+    setQuantity(formatCountValue(line.quantity))
+  }, [line.quantity])
+
+  return (
+    <li>
+      <span>{formatCountDate(line.date)}</span>
+      <span className="ipcr-actual-qty">{formatCountValue(line.quantity)}</span>
+      {canEdit ? (
+        <span className="ipcr-actual-actions print-hide">
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+            aria-label={`Count for ${formatCountDate(line.date)}`}
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              const next = Number(quantity)
+              if (!Number.isFinite(next) || next <= 0) return
+              onSave(line.date, next)
+            }}
+          >
+            Update
+          </button>
+          <button type="button" disabled={busy} onClick={() => onSave(line.date, 0)}>
+            Delete
+          </button>
+        </span>
+      ) : null}
+    </li>
   )
 }
 
@@ -362,6 +544,15 @@ function OpcrLineCells({
   accountableEntry,
   accountableRowSpan,
   alignedNames,
+  ipcr = false,
+  showActual = true,
+  actualRowSpan = 1,
+  outputLabel = '',
+  countEntries = {},
+  countColumns = [],
+  countPeriodId = 'jan_jun',
+  countBusy = '',
+  onSaveCount,
 }) {
   return (
     <>
@@ -389,7 +580,7 @@ function OpcrLineCells({
           <p className="whitespace-pre-wrap">{entry.success_indicator || ''}</p>
         )}
       </td>
-      {accountableEntry ? (
+      {ipcr ? null : accountableEntry ? (
         <td rowSpan={accountableRowSpan} className="align-top leading-6 text-slate-700">
           <AccountablePeople
             aligned={alignedNames}
@@ -400,18 +591,31 @@ function OpcrLineCells({
           />
         </td>
       ) : null}
-      <td>
-        {editing && !locked ? (
-          <textarea
-            value={entry.actual_accomplishment || ''}
-            onChange={(event) => onUpdate(entry.id, 'actual_accomplishment', event.target.value)}
-            className="field"
-            placeholder="Enter actual accomplishment"
-          />
-        ) : (
-          <p className="min-h-16 whitespace-pre-wrap">{entry.actual_accomplishment || ''}</p>
-        )}
-      </td>
+      {showActual ? (
+        <td rowSpan={ipcr ? actualRowSpan : 1} className="align-top">
+          {ipcr ? (
+            <IpcrActuals
+              output={outputLabel || entry.output || ''}
+              entries={countEntries}
+              columns={countColumns}
+              periodId={countPeriodId}
+              editing={editing}
+              locked={locked}
+              busy={countBusy}
+              onSave={onSaveCount}
+            />
+          ) : editing && !locked ? (
+            <textarea
+              value={entry.actual_accomplishment || ''}
+              onChange={(event) => onUpdate(entry.id, 'actual_accomplishment', event.target.value)}
+              className="field"
+              placeholder="Enter actual accomplishment"
+            />
+          ) : (
+            <p className="min-h-16 whitespace-pre-wrap">{entry.actual_accomplishment || ''}</p>
+          )}
+        </td>
+      ) : null}
       {['rating_q', 'rating_e', 'rating_t', 'rating_a'].map((field) => (
         <td key={field} className="text-center align-middle font-semibold text-slate-500">
           {entry[field] ? formatAverage(entry[field]) : ''}
@@ -450,6 +654,13 @@ function OpcrFunctionGroups({
   onDrop,
   onDragEnd,
   alignedByOutput = {},
+  ipcr = false,
+  staffName = '',
+  countEntries = {},
+  countColumns = [],
+  countPeriodId = 'jan_jun',
+  countBusy = '',
+  onSaveCount,
 }) {
   const canDrag = editing && !locked
 
@@ -543,7 +754,20 @@ function OpcrFunctionGroups({
             onRemoveIndicator={onRemove}
             accountableEntry={isPrimary ? primary : null}
             accountableRowSpan={isPrimary ? lines.length : 0}
-            alignedNames={alignedNamesForEntry(primary, alignedByOutput)}
+            alignedNames={
+              ipcr
+                ? [staffName].filter(Boolean)
+                : alignedNamesForEntry(primary, alignedByOutput)
+            }
+            ipcr={ipcr}
+            showActual={ipcr ? isPrimary : true}
+            actualRowSpan={lines.length}
+            outputLabel={primary.output}
+            countEntries={countEntries}
+            countColumns={countColumns}
+            countPeriodId={countPeriodId}
+            countBusy={countBusy}
+            onSaveCount={onSaveCount}
           />
         </tr>
       )
@@ -560,6 +784,7 @@ function AddOpcrRow({
   onAdd,
   onDragOver,
   onDrop,
+  colSpan = OPCR_TABLE_COLS,
 }) {
   if (!editing || locked) return null
   return (
@@ -577,7 +802,7 @@ function AddOpcrRow({
         onDrop(id, section, null)
       }}
     >
-      <td colSpan={OPCR_TABLE_COLS} className="bg-slate-50">
+      <td colSpan={colSpan} className="bg-slate-50">
         <button
           type="button"
           onClick={onAdd}
@@ -608,7 +833,8 @@ function ClosingDate({ editing, locked, value, onChange }) {
   return <span className="opcr-closing-date-text">{formatDateDisplay(saved)}</span>
 }
 
-export default function MyOpcr() {
+export default function MyOpcr({ mode = 'opcr' } = {}) {
+  const ipcr = mode === 'ipcr'
   const { user, profile } = useAuth()
   const { toast, toastPhase, toastTone, showToast } = useToast()
   const [period, setPeriod] = useState(null)
@@ -639,6 +865,8 @@ export default function MyOpcr() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [alignedByOutput, setAlignedByOutput] = useState(() => alignedMapFromBoardCache(readBoardCache()))
+  const [countStore, setCountStore] = useState({ columns: [], entries: {} })
+  const [countBusy, setCountBusy] = useState('')
   const location = useLocation()
   const editSnapshotRef = useRef(null)
   const editingIdentityRef = useRef(false)
@@ -646,6 +874,11 @@ export default function MyOpcr() {
   useEffect(() => {
     editingIdentityRef.current = editingIdentity
   }, [editingIdentity])
+
+  useEffect(() => {
+    if (!ipcr || !user?.id || !location.pathname.startsWith('/ipcr')) return
+    setCountStore(readAccomplishmentStore(user.id, profile))
+  }, [ipcr, user?.id, profile, location.pathname])
 
   const locked = form?.status === 'reviewed' || form?.status === 'finalized'
   const year = Math.max(Number(period?.year) || 0, new Date().getFullYear())
@@ -709,6 +942,23 @@ export default function MyOpcr() {
         const bundle = await ensureUserForm(supabase, user.id, activePeriod.id)
         if (!active) return
 
+        let bundleEntries = bundle.entries || []
+        if (ipcr) {
+          const context = await loadTallyContext(supabase, { userId: user.id })
+          const targetKeys = targetOutputKeysForPerson(
+            context.staff,
+            context.items,
+            context.tallies,
+            context.personItemByOutput,
+          )
+          const hidden = readIpcrHidden(user.id)
+          for (const key of [...hidden]) {
+            if (!targetKeys.has(key)) hidden.delete(key)
+          }
+          writeIpcrHidden(user.id, hidden)
+          bundleEntries = ipcrEntriesForStaff(bundleEntries, context.items, targetKeys, hidden)
+        }
+
         const approvedCached = readApprovedCache(bundle.form?.id)
         const closing = readClosingCache(bundle.form?.id)
         const headerCached = readHeaderCache(bundle.form?.id)
@@ -718,11 +968,16 @@ export default function MyOpcr() {
           userId: user.id,
           period: activePeriod,
           form: bundle.form,
-          entries: bundle.entries || [],
-          staffName: bundle.form?.signer_name?.trim() || profile?.full_name || '',
-          staffPosition: bundle.form?.signer_position?.trim() || profile?.position || '',
-          headerTitle:
-            bundle.form?.header_title?.trim() || headerCached?.title || DEFAULT_OPCR_HEADER_TITLE,
+          entries: bundleEntries,
+          staffName: ipcr
+            ? profile?.full_name || ''
+            : bundle.form?.signer_name?.trim() || profile?.full_name || '',
+          staffPosition: ipcr
+            ? profile?.position || ''
+            : bundle.form?.signer_position?.trim() || profile?.position || '',
+          headerTitle: ipcr
+            ? IPCR_HEADER_TITLE
+            : bundle.form?.header_title?.trim() || headerCached?.title || DEFAULT_OPCR_HEADER_TITLE,
           headerIntroLine: buildHeaderIntroLine(bundle.form, headerCached, activeYear),
           approvedName: bundle.form?.approved_name?.trim() || approvedCached?.name || HEAD_OF_OFFICE,
           approvedPosition:
@@ -731,9 +986,12 @@ export default function MyOpcr() {
             HEAD_OF_OFFICE_TITLE,
           approvedDate: toDateValue(bundle.form?.approved_date) || toDateValue(approvedCached?.date),
           comments: bundle.form?.comments || closing?.comments || '',
-          assessedName: bundle.form?.assessed_name?.trim() || closing?.assessedName || ASSESSOR_NAME,
-          assessedPosition:
-            bundle.form?.assessed_position?.trim() || closing?.assessedPosition || ASSESSOR_TITLE,
+          assessedName: ipcr
+            ? ASSESSOR_NAME
+            : bundle.form?.assessed_name?.trim() || closing?.assessedName || ASSESSOR_NAME,
+          assessedPosition: ipcr
+            ? ASSESSOR_TITLE
+            : bundle.form?.assessed_position?.trim() || closing?.assessedPosition || ASSESSOR_TITLE,
           discussedDate:
             toDateValue(bundle.form?.discussed_date) || toDateValue(closing?.discussedDate),
           assessedDate:
@@ -752,7 +1010,7 @@ export default function MyOpcr() {
       }
     }
 
-    const cached = readMyOpcrCache(user?.id)
+    const cached = ipcr ? null : readMyOpcrCache(user?.id)
     if (cached) {
       applySnapshot(cached)
       setLoading(false)
@@ -764,7 +1022,7 @@ export default function MyOpcr() {
     return () => {
       active = false
     }
-  }, [user?.id])
+  }, [user?.id, ipcr, profile?.full_name, profile?.position])
 
   useEffect(() => {
     let active = true
@@ -1053,6 +1311,40 @@ export default function MyOpcr() {
         }
       })
       const savedRows = await saveOpcrRows(supabase, form.id, cleanedEntries, removedIds)
+      if (ipcr) {
+        const context = await loadTallyContext(supabase, { userId: user.id })
+        const targetKeys = targetOutputKeysForPerson(
+          context.staff,
+          context.items,
+          context.tallies,
+          context.personItemByOutput,
+        )
+        const hidden = readIpcrHidden(user.id)
+        for (const entry of entries) {
+          if (!isPrimaryOpcrEntry(entry) || !removedIds.includes(entry.id)) continue
+          const key = outputKey(entry.output)
+          if (targetKeys.has(key)) hidden.add(key)
+        }
+        for (const entry of cleanedEntries) {
+          if (isPrimaryOpcrEntry(entry)) hidden.delete(outputKey(entry.output))
+        }
+        for (const key of [...hidden]) {
+          if (!targetKeys.has(key)) hidden.delete(key)
+        }
+        writeIpcrHidden(user.id, hidden)
+        setEntries(ipcrEntriesForStaff(savedRows, context.items, targetKeys, hidden))
+        setRemovedIds([])
+        setEditingIdentity(false)
+        editSnapshotRef.current = null
+        await writeAudit(
+          supabase,
+          'Saved IPCR',
+          'My IPCR',
+          period?.title || String(period?.year || year || ''),
+        )
+        showToast('IPCR saved.')
+        return
+      }
       setEntries(savedRows)
       setRemovedIds([])
       const savedDate = await saveFormSigner(supabase, form.id, {
@@ -1177,11 +1469,59 @@ export default function MyOpcr() {
 
   function printOpcr() {
     document.body.classList.add('printing-opcr')
-    const done = () => document.body.classList.remove('printing-opcr')
+    let pageStyle = null
+    if (ipcr) {
+      document.body.classList.add('printing-ipcr')
+      pageStyle = document.createElement('style')
+      pageStyle.id = 'ipcr-print-page-style'
+      pageStyle.textContent = `@media print {
+        @page { size: 13in 8.5in; margin: 0 !important; }
+      }`
+      document.head.appendChild(pageStyle)
+    }
+    const done = () => {
+      document.body.classList.remove('printing-opcr', 'printing-ipcr')
+      pageStyle?.remove()
+    }
     window.addEventListener('afterprint', done, { once: true })
     window.setTimeout(() => window.print(), 50)
   }
 
+  async function saveOutputCount(output, date, quantity) {
+    if (!user?.id) return
+    const key = `${output}|${date}`
+    setCountBusy(key)
+    try {
+      const current = readAccomplishmentStore(user.id, profile)
+      const summary = outputCountLines(current.entries, current.columns, output)
+      if (!summary.linked) throw new Error('This output is not linked to an accomplishment column.')
+      const nextEntries = writeOutputCount(current.entries, current.columns, output, date, quantity)
+      const next = { ...current, entries: nextEntries }
+      writeAccomplishmentStore(user.id, next)
+      setCountStore(next)
+      await syncAccomplishmentOutputs({
+        userId: user.id,
+        columns: next.columns,
+        entries: nextEntries,
+        dates: [date],
+        outputs: [summary.output],
+      })
+      showToast(Number(quantity) > 0 ? 'Accomplishment count saved.' : 'Accomplishment count removed.')
+    } catch (err) {
+      showToast(err.message || 'Could not save the count.', 'danger')
+    } finally {
+      setCountBusy('')
+    }
+  }
+
+  const tableCols = ipcr ? IPCR_TABLE_COLS : OPCR_TABLE_COLS
+  const ipcrPeriodLabel =
+    IPCR_COUNT_PERIODS.find((item) => item.id === ipcrPeriodIdFromPath(location.pathname))?.label ||
+    'January to June'
+  const ipcrIntroLine = headerIntroLine.replace(
+    /January\s+(?:to|–|-)\s+December\s+\d{4}/,
+    `${ipcrPeriodLabel} ${year}`,
+  )
   const rowDrag = {
     locked,
     editing: editingIdentity,
@@ -1197,9 +1537,16 @@ export default function MyOpcr() {
     onDrop: moveRow,
     onDragEnd: clearDrag,
     alignedByOutput,
+    ipcr,
+    staffName,
+    countEntries: countStore.entries,
+    countColumns: countStore.columns,
+    countPeriodId: ipcrPeriodIdFromPath(location.pathname),
+    countBusy,
+    onSaveCount: saveOutputCount,
   }
 
-  if (loading) return <LoadingState label="Loading your OPCR…" />
+  if (loading) return <LoadingState label={ipcr ? 'Loading your IPCR…' : 'Loading your OPCR…'} />
 
   return (
     <div className="w-full space-y-4 pb-20 print:space-y-0 print:pb-0">
@@ -1238,16 +1585,26 @@ export default function MyOpcr() {
         </div>
         {editingIdentity && !locked && (
           <p className="print-hide mb-3 max-w-3xl pr-52 text-xs font-medium text-slate-500">
-            Click <strong>Edit</strong> to change the document title, office lines, signer, functions, and closing section. Save or Cancel when done.
-            Use <strong>Add success indicator</strong> for another target line under the same output.
-            Use <strong>Clear all</strong> to remove every function and reset tally/daily counts after Save.
+            {ipcr
+              ? 'Your IPCR lists only the outputs that have a target assigned to you. Actual Accomplishments is the total count for this subcategory. Click Edit to add, update, or delete a date count.'
+              : 'Click Edit to change the document title, office lines, signer, functions, and closing section. Save or Cancel when done. Use Add success indicator for another target line under the same output. Use Clear all to remove every function and reset tally/daily counts after Save.'}
           </p>
         )}
 
+        <IpcrPrintFrame enabled={ipcr}>
         <div className="opcr-sheet mt-0">
           <div className="opcr-print-page">
             <header className="opcr-print-header space-y-5">
-              {editingIdentity && !locked ? (
+              {ipcr || !(editingIdentity && !locked) ? (
+                <>
+                  <h1 className="px-20 text-center text-xl font-bold tracking-wide text-slate-900 uppercase sm:px-28 sm:text-2xl">
+                    {ipcr ? IPCR_HEADER_TITLE : headerTitle}
+                  </h1>
+                  <p className="whitespace-pre-line text-center text-sm leading-6 text-slate-600">
+                    {ipcr ? ipcrIntroLine : headerIntroLine}
+                  </p>
+                </>
+              ) : (
                 <div className="opcr-header-fields space-y-3">
                   <input
                     className="opcr-header-title"
@@ -1263,17 +1620,8 @@ export default function MyOpcr() {
                     placeholder="Office and commitment lines"
                   />
                 </div>
-              ) : (
-                <>
-                  <h1 className="px-20 text-center text-xl font-bold tracking-wide text-slate-900 uppercase sm:px-28 sm:text-2xl">
-                    {headerTitle}
-                  </h1>
-                  <p className="whitespace-pre-line text-center text-sm leading-6 text-slate-600">
-                    {headerIntroLine}
-                  </p>
-                </>
               )}
-              {editingIdentity && !locked ? (
+              {editingIdentity && !locked && !ipcr ? (
                 <div className="opcr-signer">
                   <input
                     className="opcr-signer-name"
@@ -1299,6 +1647,12 @@ export default function MyOpcr() {
                 </div>
               )}
             </header>
+
+            {ipcr && !entries.length ? (
+              <p className="print-hide mt-6 text-sm text-slate-500">
+                No targets are assigned to you yet. When a tally target is assigned, that output appears here.
+              </p>
+            ) : null}
 
             <table className="opcr-approved mt-6">
               <colgroup>
@@ -1337,7 +1691,7 @@ export default function MyOpcr() {
                         </>
                       )}
                     </div>
-                    <OpcrRatingScale />
+                    {ipcr ? null : <OpcrRatingScale />}
                   </td>
                   <td className="opcr-approved-date">
                     {editingIdentity && !locked ? (
@@ -1356,9 +1710,9 @@ export default function MyOpcr() {
               </tbody>
             </table>
             <div className="opcr-print-fill">
-              <OpcrFunctionsTable>
+              <OpcrFunctionsTable ipcr={ipcr}>
                   <tr className="opcr-section">
-                    <td colSpan={OPCR_TABLE_COLS}>Core Functions: 80%</td>
+                    <td colSpan={tableCols}>Core Functions: 80%</td>
                   </tr>
                   <OpcrFunctionGroups
                     groups={section1Groups}
@@ -1371,6 +1725,7 @@ export default function MyOpcr() {
                     section={1}
                     dragId={dragId}
                     dropId={dropId}
+                    colSpan={tableCols}
                     onAdd={() => addRow(1)}
                     onDragOver={setDropId}
                     onDrop={moveRow}
@@ -1381,9 +1736,9 @@ export default function MyOpcr() {
 
           <div className="opcr-print-page">
             <div className="opcr-print-fill">
-              <OpcrFunctionsTable headClassName="opcr-repeat-head">
+              <OpcrFunctionsTable headClassName="opcr-repeat-head" ipcr={ipcr}>
                   <tr className="opcr-section">
-                    <td colSpan={OPCR_TABLE_COLS}>Support Function: 20%</td>
+                    <td colSpan={tableCols}>Support Function: 20%</td>
                   </tr>
                   <OpcrFunctionGroups
                     groups={section2Groups}
@@ -1396,6 +1751,7 @@ export default function MyOpcr() {
                     section={2}
                     dragId={dragId}
                     dropId={dropId}
+                    colSpan={tableCols}
                     onAdd={() => addRow(2)}
                     onDragOver={setDropId}
                     onDrop={moveRow}
@@ -1407,10 +1763,10 @@ export default function MyOpcr() {
           <div className="opcr-print-page">
             <div className="opcr-print-fill">
             <table className="opcr-functions">
-              <OpcrColGroup />
+              <OpcrColGroup ipcr={ipcr} />
               <tbody>
                 <tr className="opcr-average">
-                  <td colSpan={4}>Final Average Rating</td>
+                  <td colSpan={ipcr ? 3 : 4}>Final Average Rating</td>
                   <td className="text-center" />
                   <td className="text-center" />
                   <td className="text-center" />
@@ -1418,12 +1774,12 @@ export default function MyOpcr() {
                   <td />
                 </tr>
                 <tr>
-                  <td colSpan={OPCR_TABLE_COLS} className="font-bold">
+                  <td colSpan={tableCols} className="font-bold">
                     Comments and Recommendation for Development Purposes
                   </td>
                 </tr>
-                <tr className="opcr-comments-row">
-                  <td colSpan={OPCR_TABLE_COLS}>
+                <tr className={ipcr && !String(comments || '').trim() ? 'opcr-comments-row print-hide' : 'opcr-comments-row'}>
+                  <td colSpan={tableCols}>
                     {editingIdentity && !locked ? (
                       <textarea
                         className="field opcr-comments-box"
@@ -1459,7 +1815,7 @@ export default function MyOpcr() {
                 </tr>
                 <tr>
                   <td className="opcr-closing-sign">
-                    {editingIdentity && !locked ? (
+                    {editingIdentity && !locked && !ipcr ? (
                       <div className="space-y-1">
                         <input
                           className="opcr-approved-name"
@@ -1498,7 +1854,12 @@ export default function MyOpcr() {
                     <p className="opcr-closing-cert">
                       I certify that I discussed my assessment of the performance with the employee
                     </p>
-                    {editingIdentity && !locked ? (
+                    {ipcr || !(editingIdentity && !locked) ? (
+                      <>
+                        <p className="opcr-approved-name">{ASSESSOR_NAME}</p>
+                        <p className="opcr-approved-position">{ASSESSOR_TITLE}</p>
+                      </>
+                    ) : (
                       <div className="space-y-1">
                         <input
                           className="opcr-approved-name"
@@ -1513,11 +1874,6 @@ export default function MyOpcr() {
                           placeholder="Position"
                         />
                       </div>
-                    ) : (
-                      <>
-                        <p className="opcr-approved-name">{assessedName}</p>
-                        <p className="opcr-approved-position">{assessedPosition}</p>
-                      </>
                     )}
                     <p className="opcr-closing-role">Supervisor</p>
                   </td>
@@ -1559,6 +1915,7 @@ export default function MyOpcr() {
             </table>
           </div>
         </div>
+        </IpcrPrintFrame>
 
         <p className="mt-3 text-xs text-slate-500 print-hide">
           Q = Quality · E = Efficiency · T = Timeliness · A = Average

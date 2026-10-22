@@ -1,8 +1,9 @@
 import { lazy, useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   ChevronUp,
   ClipboardList,
+  ContactRound,
   CalendarDays,
   FileSpreadsheet,
   LayoutGrid,
@@ -16,14 +17,16 @@ import { useAuth } from '../context/useAuth'
 import { Avatar, BrandLogo, Button } from './ui'
 import KeepAlive from './KeepAlive'
 import LazyPage from './LazyPage'
+import { IPCR_COUNT_PERIODS } from '../lib/accomplishmentTally'
 
 const TallyBoard = lazy(() => import('../pages/TallyBoard'))
 const MyTally = lazy(() => import('../pages/MyTally'))
 const DailyLog = lazy(() => import('../pages/DailyLog'))
 const MyOpcr = lazy(() => import('../pages/MyOpcr'))
+const MyIpcr = lazy(() => import('../pages/MyIpcr'))
 const AccomplishmentReport = lazy(() => import('../pages/AccomplishmentReport'))
 
-const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr', '/accomplishment'])
+const WORK_PATHS = new Set(['/', '/my-tally', '/daily', '/opcr', '/ipcr', '/accomplishment'])
 
 const linkClass = ({ isActive }) =>
   `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
@@ -35,9 +38,15 @@ const linkClass = ({ isActive }) =>
 export default function Layout() {
   const { profile, isAdmin, signOut, user } = useAuth()
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const displayName = profile?.full_name || user?.email || 'OPCR user'
   const [showTop, setShowTop] = useState(false)
-  const showWorkPage = WORK_PATHS.has(pathname)
+  const showWorkPage = WORK_PATHS.has(pathname) || pathname.startsWith('/ipcr/')
+  const ipcrOpen = pathname === '/ipcr' || pathname.startsWith('/ipcr/')
+
+  useEffect(() => {
+    if (pathname === '/ipcr') navigate('/ipcr/january-june', { replace: true })
+  }, [pathname, navigate])
 
   useEffect(() => {
     function onScroll() {
@@ -84,6 +93,22 @@ export default function Layout() {
             <ClipboardList size={18} />
             My OPCR
           </NavLink>
+          <div>
+            <NavLink
+              to="/ipcr/january-june"
+              className={() => linkClass({ isActive: ipcrOpen })}
+            >
+              <ContactRound size={18} />
+              My IPCR
+            </NavLink>
+            <div className="mt-1 space-y-1 lg:pl-8">
+              {IPCR_COUNT_PERIODS.map((period) => (
+                <NavLink key={period.id} to={period.path} className={linkClass}>
+                  {period.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
           <NavLink to="/profile" className={linkClass}>
             <UserRound size={18} />
             Profile
@@ -142,6 +167,11 @@ export default function Layout() {
           <KeepAlive active={pathname === '/opcr'}>
             <LazyPage label="Loading My OPCR…">
               <MyOpcr />
+            </LazyPage>
+          </KeepAlive>
+          <KeepAlive active={ipcrOpen}>
+            <LazyPage label="Loading My IPCR…">
+              <MyIpcr />
             </LazyPage>
           </KeepAlive>
           <KeepAlive active={pathname === '/accomplishment'}>

@@ -33,6 +33,9 @@ export default function App() {
           <Route path="/my-tally" element={<WorkRoutePlaceholder />} />
           <Route path="/tally" element={<Navigate to="/my-tally" replace />} />
           <Route path="/opcr" element={<WorkRoutePlaceholder />} />
+          <Route path="/ipcr" element={<WorkRoutePlaceholder />} />
+          <Route path="/ipcr/january-june" element={<WorkRoutePlaceholder />} />
+          <Route path="/ipcr/july-december" element={<WorkRoutePlaceholder />} />
           <Route path="/daily" element={<WorkRoutePlaceholder />} />
           <Route path="/accomplishment" element={<WorkRoutePlaceholder />} />
           <Route

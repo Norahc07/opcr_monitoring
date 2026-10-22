@@ -24,7 +24,6 @@ import {
 } from '../lib/accomplishment'
 import {
   ACCOMPLISHMENT_COUNT_RULES,
-  ACCOMPLISHMENT_TALLY_LINKS,
   syncAccomplishmentOutputs,
   tallyOutputForColumn,
 } from '../lib/accomplishmentTally'
@@ -263,29 +262,23 @@ export default function AccomplishmentReport() {
       </nav>
 
       <section className="ar-rules print-hide" aria-label="How counts reach the tally">
-        <h2>How to enter a count</h2>
-        <ul>
-          {ACCOMPLISHMENT_COUNT_RULES.map((rule) => (
-            <li key={rule}>{rule}</li>
+        <div className="ar-rules-intro">
+          <h2>How to enter a count</h2>
+          <p>Example for one date</p>
+          <div className="ar-rules-sample">
+            <span>10 PKM ID</span>
+            <span>3 BHW ID</span>
+          </div>
+        </div>
+        <ol>
+          {ACCOMPLISHMENT_COUNT_RULES.map((rule, index) => (
+            <li key={rule.title}>
+              <span>{index + 1}</span>
+              <strong>{rule.title}</strong>
+              <p>{rule.text}</p>
+            </li>
           ))}
-        </ul>
-        <h3>Columns that update the tally</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Accomplishment column</th>
-              <th>Tally output</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ACCOMPLISHMENT_TALLY_LINKS.map((link) => (
-              <tr key={link.column}>
-                <td>{link.column}</td>
-                <td>{link.output}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        </ol>
         {tallyNote ? <p className="ar-tally-note">{tallyNote}</p> : null}
       </section>
 
@@ -349,11 +342,6 @@ export default function AccomplishmentReport() {
                     >
                       <div className="ar-col-head">
                         <span className="ar-col-title">{column.label}</span>
-                        {tallyOutputForColumn(column.label) ? (
-                          <span className="ar-col-link print-hide">
-                            Counts toward {tallyOutputForColumn(column.label)}
-                          </span>
-                        ) : null}
                         <button
                           type="button"
                           className="ar-col-edit print-hide"

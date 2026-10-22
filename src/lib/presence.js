@@ -46,20 +46,28 @@ export function presenceInfo(lastSeenAt, now = Date.now()) {
 }
 
 function isMissingPresenceSetup(error) {
-  const message = String(error?.message || error?.details || '')
+  const message = String(error?.message || error?.details || error?.hint || '')
   return (
     message.includes('last_seen_at') ||
     message.includes('touch_last_seen') ||
     error?.code === 'PGRST202' ||
-    error?.code === '42703'
+    error?.code === 'PGRST204' ||
+    error?.code === '42703' ||
+    error?.status === 404
   )
 }
 
+let presenceUnavailable = false
+
 export async function pingLastSeen(client, userId) {
-  if (!client || !userId) return { ok: false, missingSetup: false }
+  if (!client || !userId || presenceUnavailable) return { ok: false, missingSetup: presenceUnavailable }
 
   const { data, error } = await client.rpc('touch_last_seen')
   if (!error && data) return { ok: true, at: data, missingSetup: false }
+  if (isMissingPresenceSetup(error)) {
+    presenceUnavailable = true
+    return { ok: false, missingSetup: true }
+  }
 
   const seen = new Date().toISOString()
   const { data: row, error: updateError } = await client
