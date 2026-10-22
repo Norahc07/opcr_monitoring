@@ -1,4 +1,4 @@
-import { outputKey, loadTallyContext } from './opcr'
+import { outputKey, loadTallyContext, saveStaffTallies, toCount, TALLY_PERIOD_ID } from './opcr'
 import { saveDailyLogs } from './daily'
 import { supabase } from './supabase'
 import { ACCOMPLISHMENT_YEAR, setCellEntry } from './accomplishment'
@@ -30,7 +30,7 @@ export const ACCOMPLISHMENT_COUNT_RULES = [
   },
   {
     title: 'Linked columns update the tally',
-    text: 'A linked column sends that day’s count to the tally. Do not enter it again in the Daily log.',
+    text: 'A linked column adds that day’s count to the tally. Numbers already on the tally board stay.',
   },
 ]
 
@@ -77,9 +77,42 @@ function findOutputItem(items, output) {
   return (items || []).find((item) => item?.id && outputKey(item.output) === wanted) || null
 }
 
+function syncedStoreKey(userId) {
+  return `opcr-accomplishment-synced:${userId}`
+}
+
+function readSyncedCounts(userId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(syncedStoreKey(userId)) || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSyncedCounts(userId, counts) {
+  try {
+    localStorage.setItem(syncedStoreKey(userId), JSON.stringify(counts))
+  } catch {
+    // Ignore quota / private-mode failures.
+  }
+}
+
+function dateKey(value) {
+  return String(value || '').slice(0, 10)
+}
+
+function combineNotes(existingNotes, addedNotes) {
+  const current = String(existingNotes || '').trim()
+  const added = String(addedNotes || '').trim()
+  if (!added) return current
+  if (!current || current.includes(added)) return current || added
+  return `${current}\n${added}`
+}
+
 export async function syncAccomplishmentOutputs({ userId, columns, entries, dates, outputs }) {
   const linked = [...new Set((outputs || []).filter(Boolean))]
-  const workDates = [...new Set((dates || []).filter(Boolean))]
+  const workDates = [...new Set((dates || []).map(dateKey).filter(Boolean))]
   if (!userId || !linked.length || !workDates.length) return []
   if (!supabase) throw new Error('The tally is not connected.')
 
@@ -88,24 +121,50 @@ export async function syncAccomplishmentOutputs({ userId, columns, entries, date
     throw new Error('This account is not linked to the tally board yet.')
   }
 
+  const synced = readSyncedCounts(userId)
   const saved = []
+
   for (const output of linked) {
     const item = findOutputItem(context.items, output)
     if (!item) {
       throw new Error(`${output} is not on the tally board, so this column was saved here only.`)
     }
-    for (const date of workDates) {
-      const quantity = quantityForOutput(entries, columns, date, output)
-      const notes = notesForOutput(entries, columns, date, output)
-      const { data: existing, error: existingError } = await supabase
-        .from('opcr_daily_logs')
-        .select('id')
+
+    const [{ data: tally, error: tallyError }, { data: logs, error: logsError }] = await Promise.all([
+      supabase
+        .from('opcr_tallies')
+        .select('accomplished')
+        .eq('period_id', context.period.id)
         .eq('staff_id', context.staff.id)
         .eq('item_id', item.id)
-        .eq('work_date', date)
-        .maybeSingle()
-      if (existingError) throw existingError
-      if (!existing?.id && quantity <= 0 && !notes) continue
+        .eq('semester', TALLY_PERIOD_ID)
+        .maybeSingle(),
+      supabase
+        .from('opcr_daily_logs')
+        .select('id, work_date, quantity, notes')
+        .eq('period_id', context.period.id)
+        .eq('staff_id', context.staff.id)
+        .eq('item_id', item.id),
+    ])
+    if (tallyError) throw tallyError
+    if (logsError) throw logsError
+
+    const logRows = logs || []
+    const logSum = logRows.reduce((sum, row) => sum + toCount(row.quantity), 0)
+    const board = toCount(tally?.accomplished)
+    const kept = Math.max(0, board - logSum)
+    let added = 0
+
+    for (const date of workDates) {
+      const accomplishmentQty = quantityForOutput(entries, columns, date, output)
+      const notes = notesForOutput(entries, columns, date, output)
+      const existing = logRows.find((row) => dateKey(row.work_date) === date)
+      const existingQty = toCount(existing?.quantity)
+      const remembered = Math.min(toCount(synced[`${item.id}|${date}`]), existingQty)
+      const otherQty = Math.max(0, existingQty - remembered)
+      const nextQty = otherQty + accomplishmentQty
+      const notesToSave = otherQty > 0 ? combineNotes(existing?.notes, notes) : notes
+      if (!existing?.id && nextQty <= 0 && !notesToSave) continue
       await saveDailyLogs(supabase, {
         periodId: context.period.id,
         staffId: context.staff.id,
@@ -114,15 +173,25 @@ export async function syncAccomplishmentOutputs({ userId, columns, entries, date
         rows: [
           {
             item_id: item.id,
-            quantity,
-            notes,
+            quantity: nextQty,
+            notes: notesToSave,
             log_id: existing?.id,
           },
         ],
       })
-      saved.push({ output, date, quantity })
+      synced[`${item.id}|${date}`] = accomplishmentQty
+      writeSyncedCounts(userId, synced)
+      added += accomplishmentQty - remembered
+      saved.push({ output, date, quantity: accomplishmentQty, delta: accomplishmentQty - remembered })
+    }
+
+    if (kept > 0 || added !== 0) {
+      await saveStaffTallies(supabase, context.period.id, context.staff.id, userId, [
+        { item_id: item.id, accomplished: Math.max(0, board + added) },
+      ])
     }
   }
+
   return saved
 }
 

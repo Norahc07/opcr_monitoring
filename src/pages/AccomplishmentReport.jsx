@@ -107,8 +107,14 @@ export default function AccomplishmentReport() {
       const counted = saved.filter((row) => row.quantity > 0)
       setTallyNote(
         counted.length
-          ? `Tally updated. ${counted.map((row) => `${row.output} on ${row.date} is now ${row.quantity}`).join('; ')}. That day’s count is included in the January–December total.`
-          : 'Saved. That date no longer adds to the tally.',
+          ? `Added to the tally. ${counted
+              .map((row) =>
+                row.delta > 0
+                  ? `${row.output} on ${row.date} added ${row.delta}`
+                  : `${row.output} on ${row.date} is now ${row.quantity}`,
+              )
+              .join('; ')}. Numbers already on the tally board were kept.`
+          : 'Saved. That date no longer adds an accomplishment count. Other tally numbers were kept.',
       )
     } catch (err) {
       setTallyNote(err.message || 'The accomplishment was saved, but the tally was not updated.')
