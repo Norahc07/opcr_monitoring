@@ -1,6 +1,7 @@
-import { lazy, useEffect, useState } from 'react'
+import { lazy, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
+  ChevronDown,
   ChevronUp,
   ClipboardList,
   ContactRound,
@@ -43,10 +44,21 @@ export default function Layout() {
   const [showTop, setShowTop] = useState(false)
   const showWorkPage = WORK_PATHS.has(pathname) || pathname.startsWith('/ipcr/')
   const ipcrOpen = pathname === '/ipcr' || pathname.startsWith('/ipcr/')
+  const [ipcrMenuOpen, setIpcrMenuOpen] = useState(ipcrOpen)
+  const ipcrWasOpen = useRef(ipcrOpen)
 
   useEffect(() => {
+    if (isAdmin && ipcrOpen) {
+      navigate('/', { replace: true })
+      return
+    }
     if (pathname === '/ipcr') navigate('/ipcr/january-june', { replace: true })
-  }, [pathname, navigate])
+  }, [pathname, navigate, isAdmin, ipcrOpen])
+
+  useEffect(() => {
+    if (ipcrOpen && !ipcrWasOpen.current) setIpcrMenuOpen(true)
+    ipcrWasOpen.current = ipcrOpen
+  }, [ipcrOpen])
 
   useEffect(() => {
     function onScroll() {
@@ -93,22 +105,39 @@ export default function Layout() {
             <ClipboardList size={18} />
             My OPCR
           </NavLink>
-          <div>
-            <NavLink
-              to="/ipcr/january-june"
-              className={() => linkClass({ isActive: ipcrOpen })}
+          {!isAdmin && (
+          <div className="shrink-0">
+            <button
+              type="button"
+              className={`${linkClass({ isActive: ipcrOpen })} w-full`}
+              aria-expanded={ipcrMenuOpen}
+              onClick={() => {
+                if (ipcrMenuOpen) {
+                  setIpcrMenuOpen(false)
+                  return
+                }
+                setIpcrMenuOpen(true)
+                if (!ipcrOpen) navigate('/ipcr/january-june')
+              }}
             >
               <ContactRound size={18} />
-              My IPCR
-            </NavLink>
-            <div className="mt-1 space-y-1 lg:pl-8">
-              {IPCR_COUNT_PERIODS.map((period) => (
-                <NavLink key={period.id} to={period.path} className={linkClass}>
-                  {period.label}
-                </NavLink>
-              ))}
-            </div>
+              <span className="flex-1 text-left">My IPCR</span>
+              <ChevronDown
+                size={16}
+                className={`transition ${ipcrMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {ipcrMenuOpen ? (
+              <div className="mt-1 space-y-1 lg:pl-8">
+                {IPCR_COUNT_PERIODS.map((period) => (
+                  <NavLink key={period.id} to={period.path} className={linkClass}>
+                    {period.label}
+                  </NavLink>
+                ))}
+              </div>
+            ) : null}
           </div>
+          )}
           <NavLink to="/profile" className={linkClass}>
             <UserRound size={18} />
             Profile
@@ -169,7 +198,7 @@ export default function Layout() {
               <MyOpcr />
             </LazyPage>
           </KeepAlive>
-          <KeepAlive active={ipcrOpen}>
+          <KeepAlive active={ipcrOpen && !isAdmin}>
             <LazyPage label="Loading My IPCR…">
               <MyIpcr />
             </LazyPage>
